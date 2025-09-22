@@ -76,6 +76,23 @@ from formed_and_unformed_patterns import (
     detect_unformed_xabcd_patterns_fast as detect_unformed_xabcd_patterns
 )
 
+# Import strict ABCD pattern detection
+from strict_abcd_patterns import detect_strict_abcd_patterns
+# Use the ultra-fast sliding window implementation
+from strict_xabcd_patterns import detect_strict_xabcd_patterns
+print("Using ULTRA-FAST strict XABCD detection (sliding window algorithm)")
+
+# Import comprehensive ABCD pattern detection
+from comprehensive_abcd_patterns import (
+    detect_strict_abcd_patterns as detect_comprehensive_strict_abcd,
+    detect_unformed_abcd_patterns_optimized as detect_comprehensive_unformed_abcd
+)
+print("Comprehensive ABCD pattern detection loaded")
+
+# Import comprehensive XABCD pattern detection
+from comprehensive_xabcd_patterns import detect_strict_unformed_xabcd_patterns as detect_comprehensive_unformed_xabcd
+print("Comprehensive XABCD pattern detection loaded")
+
 # Import Binance data downloader
 from binance_downloader import BinanceDataDownloader
 
@@ -202,17 +219,21 @@ class PatternDetectionWorker(QThread):
     status = pyqtSignal(str)
     finished = pyqtSignal(dict)
 
-    def __init__(self, extremum_points, pattern_types, data=None):
+    def __init__(self, extremum_points, pattern_types, data=None, main_window=None):
         super().__init__()
         self.extremum_points = extremum_points
         self.pattern_types = pattern_types
         self.data = data  # Candlestick data for filtering unformed patterns
+        self.main_window = main_window
 
     def run(self):
         """Run pattern detection in background"""
         results = {
             'abcd': [],
             'xabcd': [],
+            'strict_abcd': [],
+            'comprehensive_abcd': [],
+            'comprehensive_xabcd': [],
             'unformed': [],
             'unformed_xabcd': []
         }
@@ -223,31 +244,59 @@ class PatternDetectionWorker(QThread):
 
             # Detect patterns based on selected types
             if 'abcd' in self.pattern_types:
-                self.status.emit("Detecting Formed ABCD patterns...")
-                if DEBUG_MODE: print("Detecting Formed ABCD patterns...")
+                self.status.emit("Detecting Basic ABCD patterns...")
+                if DEBUG_MODE: print("Detecting Basic ABCD patterns...")
                 results['abcd'] = self.detect_abcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['abcd'])} Formed ABCD patterns")
-                self.progress.emit(25)
+                if DEBUG_MODE: print(f"Found {len(results['abcd'])} Basic ABCD patterns")
+                self.progress.emit(20)
+
+            if 'strict_abcd' in self.pattern_types:
+                self.status.emit("Detecting Strict ABCD patterns (with price containment)...")
+                if DEBUG_MODE: print("Detecting Strict ABCD patterns...")
+                results['strict_abcd'] = self.detect_strict_abcd_patterns()
+                if DEBUG_MODE: print(f"Found {len(results['strict_abcd'])} Strict ABCD patterns")
+                self.progress.emit(30)
+
+            if 'comprehensive_abcd' in self.pattern_types:
+                self.status.emit("Detecting Unstrict ABCD patterns with comprehensive validation...")
+                if DEBUG_MODE: print("Detecting Comprehensive ABCD patterns (unstrict only)...")
+                results['comprehensive_abcd'] = self.detect_comprehensive_abcd_patterns()
+                if DEBUG_MODE: print(f"Found {len(results['comprehensive_abcd'])} Unstrict ABCD patterns")
+                self.progress.emit(35)
+
+            if 'comprehensive_xabcd' in self.pattern_types:
+                self.status.emit("Detecting Unstrict XABCD patterns with comprehensive validation...")
+                if DEBUG_MODE: print("Detecting Comprehensive XABCD patterns (unstrict only)...")
+                results['comprehensive_xabcd'] = self.detect_comprehensive_xabcd_patterns()
+                if DEBUG_MODE: print(f"Found {len(results['comprehensive_xabcd'])} Unstrict XABCD patterns")
+                self.progress.emit(40)
 
             if 'xabcd' in self.pattern_types:
-                self.status.emit("Detecting Formed XABCD patterns...")
-                if DEBUG_MODE: print("Detecting Formed XABCD patterns...")
+                self.status.emit("Detecting Basic XABCD patterns...")
+                if DEBUG_MODE: print("Detecting Basic XABCD patterns...")
                 results['xabcd'] = self.detect_xabcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['xabcd'])} Formed XABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['xabcd'])} Basic XABCD patterns")
                 self.progress.emit(50)
 
-            if 'unformed' in self.pattern_types:
-                self.status.emit("Detecting Unformed ABCD patterns...")
-                if DEBUG_MODE: print("Detecting Unformed ABCD patterns...")
+            if 'strict_xabcd' in self.pattern_types:
+                self.status.emit("Detecting Strict XABCD patterns (with price containment)...")
+                if DEBUG_MODE: print("Detecting Strict XABCD patterns...")
+                results['strict_xabcd'] = self.detect_strict_xabcd_patterns()
+                # Don't print count here - will print final count after deduplication
+                self.progress.emit(55)
+
+            if 'unstrict_abcd' in self.pattern_types:
+                self.status.emit("Detecting Unstrict ABCD patterns...")
+                if DEBUG_MODE: print("Detecting Unstrict ABCD patterns...")
                 results['unformed'] = self.detect_unformed_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['unformed'])} Unformed ABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['unformed'])} Unstrict ABCD patterns")
                 self.progress.emit(75)
 
-            if 'unformed_xabcd' in self.pattern_types:
-                self.status.emit("Detecting Unformed XABCD patterns...")
-                if DEBUG_MODE: print("Detecting Unformed XABCD patterns...")
+            if 'unstrict_xabcd' in self.pattern_types:
+                self.status.emit("Detecting Unstrict XABCD patterns...")
+                if DEBUG_MODE: print("Detecting Unstrict XABCD patterns...")
                 results['unformed_xabcd'] = self.detect_unformed_xabcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['unformed_xabcd'])} Unformed XABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['unformed_xabcd'])} Unstrict XABCD patterns")
                 self.progress.emit(100)
 
             # Validate that all results are lists of dictionaries
@@ -265,7 +314,16 @@ class PatternDetectionWorker(QThread):
                             if DEBUG_MODE: print(f"Warning: {ptype}[{i}] is not a dict: {type(pattern)}")
                     results[ptype] = valid_patterns
 
-            if DEBUG_MODE: print(f"Pattern detection complete. Total patterns: {sum(len(p) for p in results.values())}")
+            if DEBUG_MODE:
+                total_before_dedup = sum(len(p) for p in results.values())
+                print(f"Pattern detection complete. Total patterns before deduplication: {total_before_dedup}")
+
+            if DEBUG_MODE:
+                # Print final counts after deduplication
+                for pattern_type, patterns in results.items():
+                    if patterns:  # Only print non-empty pattern types
+                        print(f"Found {len(patterns)} {pattern_type.replace('_', ' ').title()} patterns (after deduplication)")
+                print(f"Total patterns after deduplication: {sum(len(p) for p in results.values())}")
             self.finished.emit(results)
 
         except Exception as e:
@@ -277,6 +335,26 @@ class PatternDetectionWorker(QThread):
     def detect_abcd_patterns(self):
         """Detect Formed ABCD patterns"""
         return detect_formed_abcd_patterns(self.extremum_points, log_details=True)
+
+    def detect_strict_abcd_patterns(self):
+        """Detect Strict Formed ABCD patterns with price containment validation"""
+        # Pass optimization parameters for better performance
+        return detect_strict_abcd_patterns(
+            self.extremum_points,
+            self.data,
+            log_details=False,  # Disable detailed logging for speed
+            max_patterns=100,    # Increased limit to 100
+        )
+
+    def detect_strict_xabcd_patterns(self):
+        """Detect Strict Formed XABCD patterns with price containment validation"""
+        return detect_strict_xabcd_patterns(
+            self.extremum_points,
+            self.data,
+            log_details=False,  # Disable detailed logging for speed
+            max_patterns=100,    # Increased limit to 100
+            max_window=100  # Use the optimized sliding window algorithm
+        )
 
     def detect_xabcd_patterns(self):
         """Detect Formed XABCD patterns"""
@@ -346,6 +424,37 @@ class PatternDetectionWorker(QThread):
         patterns = detect_unformed_abcd_patterns(self.extremum_points, log_details=False)
         return self.filter_unformed_patterns(patterns, is_xabcd=False)
 
+    def detect_comprehensive_abcd_patterns(self):
+        """Detect Comprehensive ABCD patterns (strict unformed only)"""
+        # Detect strict unformed ABCD patterns
+        unformed_patterns = detect_comprehensive_unformed_abcd(
+            self.extremum_points,
+            self.data,
+            log_details=False,
+            max_patterns=100,  # Increased limit since we're only getting unformed
+            strict_validation=True
+        )
+
+        # Filter unformed patterns
+        unformed_filtered = self.filter_unformed_patterns(unformed_patterns, is_xabcd=False)
+
+        return unformed_filtered
+
+    def detect_comprehensive_xabcd_patterns(self):
+        """Detect Comprehensive XABCD patterns (strict unformed only)"""
+        # Detect strict unformed XABCD patterns
+        unformed_patterns = detect_comprehensive_unformed_xabcd(
+            self.extremum_points,
+            self.data,
+            log_details=False,
+            max_patterns=100    # Increased limit to 100
+        )
+
+        # Filter unformed patterns
+        unformed_filtered = self.filter_unformed_patterns(unformed_patterns, is_xabcd=True)
+
+        return unformed_filtered
+
     def detect_unformed_xabcd_patterns(self):
         """Detect Unformed XABCD patterns"""
         print(f"Detecting Unformed XABCD patterns with {len(self.extremum_points)} points")
@@ -360,7 +469,7 @@ class PatternDetectionWorker(QThread):
         if len(extremums_to_use) > 5:
             print(f"  ... and {len(extremums_to_use) - 5} more")
 
-        patterns = detect_unformed_xabcd_patterns(extremums_to_use, df=self.data, log_details=True, max_patterns=50)
+        patterns = detect_unformed_xabcd_patterns(extremums_to_use, df=self.data, log_details=True, max_patterns=100)
 
         # Ensure patterns is a list
         if not isinstance(patterns, list):
@@ -622,6 +731,10 @@ class AllPatternsWindow(QMainWindow):
         self.pattern_counts = {
             'abcd': 0,
             'xabcd': 0,
+            'strict_abcd': 0,
+            'strict_xabcd': 0,
+            'comprehensive_abcd': 0,
+            'comprehensive_xabcd': 0,
             'unformed': 0,
             'unformed_xabcd': 0,
             'bull': 0,
@@ -660,30 +773,39 @@ class AllPatternsWindow(QMainWindow):
         """)
         type_layout = QVBoxLayout(type_group)
 
-        # ABCD/XABCD checkboxes - Start with only formed patterns checked to avoid freeze
-        self.abcd_checkbox = QCheckBox(f"ABCD Patterns ({self.pattern_counts['abcd']})")
-        self.abcd_checkbox.setChecked(True)
-        self.abcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.abcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.abcd_checkbox)
+        # Only show Strict and Unstrict pattern types (removed basic ABCD/XABCD)
 
-        self.xabcd_checkbox = QCheckBox(f"XABCD Patterns ({self.pattern_counts['xabcd']})")
-        self.xabcd_checkbox.setChecked(True)
-        self.xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.xabcd_checkbox)
+        # Formed ABCD checkbox
+        strict_count = self.pattern_counts.get('strict_abcd', 0)
+        self.strict_abcd_checkbox = QCheckBox(f"Formed ABCD ({strict_count})")
+        self.strict_abcd_checkbox.setChecked(True)  # Start checked
+        self.strict_abcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
+        self.strict_abcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
+        type_layout.addWidget(self.strict_abcd_checkbox)
 
-        self.unformed_checkbox = QCheckBox(f"Unformed ABCD ({self.pattern_counts['unformed']})")
-        self.unformed_checkbox.setChecked(False)  # Start unchecked to reduce initial load
-        self.unformed_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.unformed_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.unformed_checkbox)
+        # Formed XABCD checkbox
+        strict_xabcd_count = self.pattern_counts.get('strict_xabcd', 0)
+        self.strict_xabcd_checkbox = QCheckBox(f"Formed XABCD ({strict_xabcd_count})")
+        self.strict_xabcd_checkbox.setChecked(True)  # Start checked
+        self.strict_xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
+        self.strict_xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
+        type_layout.addWidget(self.strict_xabcd_checkbox)
 
-        self.unformed_xabcd_checkbox = QCheckBox(f"Unformed XABCD ({self.pattern_counts['unformed_xabcd']})")
-        self.unformed_xabcd_checkbox.setChecked(False)  # Start unchecked to reduce initial load
-        self.unformed_xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.unformed_xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.unformed_xabcd_checkbox)
+        # Unformed ABCD checkbox
+        comprehensive_count = self.pattern_counts.get('comprehensive_abcd', 0)
+        self.comprehensive_abcd_checkbox = QCheckBox(f"Unformed ABCD ({comprehensive_count})")
+        self.comprehensive_abcd_checkbox.setChecked(True)  # Start checked
+        self.comprehensive_abcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
+        self.comprehensive_abcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
+        type_layout.addWidget(self.comprehensive_abcd_checkbox)
+
+        # Unformed XABCD checkbox
+        comprehensive_xabcd_count = self.pattern_counts.get('comprehensive_xabcd', 0)
+        self.comprehensive_xabcd_checkbox = QCheckBox(f"Unformed XABCD ({comprehensive_xabcd_count})")
+        self.comprehensive_xabcd_checkbox.setChecked(True)  # Start checked
+        self.comprehensive_xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
+        self.comprehensive_xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
+        type_layout.addWidget(self.comprehensive_xabcd_checkbox)
 
         filter_layout.addWidget(type_group)
 
@@ -840,33 +962,8 @@ class AllPatternsWindow(QMainWindow):
             checkbox.blockSignals(True)
 
         try:
-            # Handle ABCD checkbox change
-            if self.sender() == self.abcd_checkbox:
-                for pattern_name in abcd_patterns:
-                    if pattern_name in self.pattern_checkboxes:
-                        self.pattern_checkboxes[pattern_name].setChecked(self.abcd_checkbox.isChecked())
-
-            # Handle XABCD checkbox change
-            elif self.sender() == self.xabcd_checkbox:
-                for pattern_name in xabcd_patterns:
-                    if pattern_name in self.pattern_checkboxes:
-                        self.pattern_checkboxes[pattern_name].setChecked(self.xabcd_checkbox.isChecked())
-
-            # Handle Unformed ABCD checkbox change
-            elif self.sender() == self.unformed_checkbox:
-                # Unformed ABCD patterns will have same names as formed ABCD
-                for pattern_name in abcd_patterns:
-                    if pattern_name in self.pattern_checkboxes:
-                        # Only affect if it's unformed type
-                        pass  # This is handled by the filter logic
-
-            # Handle Unformed XABCD checkbox change
-            elif self.sender() == self.unformed_xabcd_checkbox:
-                # Unformed XABCD patterns will have same names as formed XABCD
-                for pattern_name in xabcd_patterns:
-                    if pattern_name in self.pattern_checkboxes:
-                        # Only affect if it's unformed type
-                        pass  # This is handled by the filter logic
+            # All unstrict checkbox handlers removed
+            pass
 
         finally:
             # Re-enable signals
@@ -884,14 +981,16 @@ class AllPatternsWindow(QMainWindow):
         for pattern in self.all_patterns:
             # Check pattern type
             ptype = pattern.get('pattern_type', '')
-            if ptype == 'abcd' and not self.abcd_checkbox.isChecked():
+            # Only keep strict and unstrict patterns
+            if ptype == 'strict_abcd' and not hasattr(self, 'strict_abcd_checkbox'):
                 continue
-            if ptype == 'xabcd' and not self.xabcd_checkbox.isChecked():
+            if ptype == 'strict_abcd' and hasattr(self, 'strict_abcd_checkbox') and not self.strict_abcd_checkbox.isChecked():
                 continue
-            if ptype == 'unformed' and not self.unformed_checkbox.isChecked():
+            if ptype == 'strict_xabcd' and not hasattr(self, 'strict_xabcd_checkbox'):
                 continue
-            if ptype == 'unformed_xabcd' and not self.unformed_xabcd_checkbox.isChecked():
+            if ptype == 'strict_xabcd' and hasattr(self, 'strict_xabcd_checkbox') and not self.strict_xabcd_checkbox.isChecked():
                 continue
+            # Removed all unstrict pattern type checks
 
             # Check direction
             pattern_name = pattern.get('name', '').lower()
@@ -1162,8 +1261,8 @@ class PatternViewerWindow(QMainWindow):
                 pattern['pattern_type'] = ptype
                 self.all_patterns.append(pattern)
 
-        # Remove duplicate patterns that may have been detected by multiple algorithms
-        self.all_patterns = self.deduplicate_patterns(self.all_patterns)
+        # No deduplication needed with exact pattern matching
+        # Each XABCD combination maps to at most one specific pattern name
 
         # Initialize filtered patterns (will be updated by filters)
         self.filtered_patterns = self.all_patterns.copy()
@@ -1498,18 +1597,28 @@ class PatternViewerWindow(QMainWindow):
     def updatePatternCrosshairLabel(self, x, y):
         """Update crosshair label with current price and date for pattern viewer"""
         try:
-            # Get current data
-            if self.data is None or len(self.data) == 0:
-                return
+            # Check if display_data is available (set when a pattern is displayed)
+            if not hasattr(self, 'display_data') or self.display_data is None:
+                # Fall back to using full data if display_data not available
+                if self.data is None or len(self.data) == 0:
+                    return
+                data_to_use = self.data
+                index_offset = 0
+            else:
+                # Use the display_data which corresponds to what's shown on the chart
+                data_to_use = self.display_data
+                # No offset needed as display_data is already reset_index(drop=True)
+                index_offset = 0
 
             # Convert x position to integer index
             x_int = int(round(x))
 
-            # Ensure x is within data bounds
-            if 0 <= x_int < len(self.data):
+            # Ensure x is within the displayed data bounds
+            if 0 <= x_int < len(data_to_use):
                 # Get date and OHLC data for this index
-                date = self.data.index[x_int]
-                row = self.data.iloc[x_int]
+                # Note: display_data still has the original time index
+                date = data_to_use.index[x_int]
+                row = data_to_use.iloc[x_int]
 
                 # Format date - handle different date types
                 if hasattr(date, 'strftime'):
@@ -1660,9 +1769,23 @@ class PatternViewerWindow(QMainWindow):
         # Get the data slice
         display_data = self.data.iloc[display_min:display_max]
 
+        # Store the display data and range for crosshair access
+        self.display_data = display_data
+        self.display_min = display_min
+        self.display_max = display_max
+
         # Create candlestick chart for the relevant range
         candles = CandlestickItem(display_data.reset_index(drop=True))
         self.chart.addItem(candles)
+
+        # Set Y-axis range based on the actual data
+        y_min = display_data['Low'].min() * 0.999  # Add 0.1% padding
+        y_max = display_data['High'].max() * 1.001  # Add 0.1% padding
+        self.chart.setYRange(y_min, y_max, padding=0)
+
+        # Enable auto-range but keep Y fixed to our calculated range
+        self.chart.enableAutoRange(axis='x')
+        self.chart.setAutoVisible(y=True, x=True)
 
         # Plot ALL extremum points in the visible range as reference
         if self.extremum_points:
@@ -1862,7 +1985,15 @@ class PatternViewerWindow(QMainWindow):
         if 'points' in pattern:
             details += "Point Values:\n"
             points = pattern['points']
-            for point_name in ['X', 'A', 'B', 'C', 'D']:
+            # Determine which points to show based on pattern type
+            if 'xabcd' in pattern.get('type', '').lower() or 'strict_xabcd' in pattern.get('type', ''):
+                # XABCD patterns have all 5 points
+                point_names = ['X', 'A', 'B', 'C', 'D']
+            else:
+                # ABCD patterns only have 4 points
+                point_names = ['A', 'B', 'C', 'D']
+
+            for point_name in point_names:
                 if point_name in points and 'price' in points[point_name]:
                     details += f"  {point_name}: {points[point_name]['price']:.2f}\n"
             details += "\n"
@@ -2132,6 +2263,11 @@ class HarmonicPatternDetector(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
 
+        # Make status bar text selectable (must be done after showMessage)
+        status_label = self.status_bar.findChild(QLabel)
+        if status_label:
+            status_label.setTextInteractionFlags(status_label.textInteractionFlags() | 0x00000002)  # TextSelectableByMouse
+
         # Create main splitter for chart and controls
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
@@ -2197,22 +2333,32 @@ class HarmonicPatternDetector(QMainWindow):
         timeframe_layout.addWidget(self.timeframe_combo)
         download_layout.addLayout(timeframe_layout)
 
-        # Download date range
+        # Download date range with checkbox for all available data
         download_date_layout = QVBoxLayout()
-        download_date_layout.addWidget(QLabel("Download Range:"))
+
+        # Add checkbox for downloading all available data
+        self.download_all_checkbox = QCheckBox("Download ALL available data")
+        self.download_all_checkbox.setChecked(True)  # Default to downloading all data
+        self.download_all_checkbox.setStyleSheet("QCheckBox { font-weight: bold; color: #2E7D32; }")
+        self.download_all_checkbox.stateChanged.connect(self.onDownloadAllToggled)
+        download_date_layout.addWidget(self.download_all_checkbox)
+
+        download_date_layout.addWidget(QLabel("Custom Date Range:"))
 
         download_date_range_layout = QHBoxLayout()
         download_date_range_layout.addWidget(QLabel("From:"))
         self.download_start_date = QDateEdit()
         self.download_start_date.setCalendarPopup(True)
-        # Set default to 1 year ago
+        # Set default to 1 year ago for custom range
         self.download_start_date.setDate(QDate.currentDate().addYears(-1))
+        self.download_start_date.setEnabled(False)  # Disabled by default since "Download ALL" is checked
         download_date_range_layout.addWidget(self.download_start_date)
 
         download_date_range_layout.addWidget(QLabel("To:"))
         self.download_end_date = QDateEdit()
         self.download_end_date.setCalendarPopup(True)
         self.download_end_date.setDate(QDate.currentDate())
+        self.download_end_date.setEnabled(False)  # Disabled by default since "Download ALL" is checked
         download_date_range_layout.addWidget(self.download_end_date)
 
         download_date_layout.addLayout(download_date_range_layout)
@@ -2334,19 +2480,25 @@ class HarmonicPatternDetector(QMainWindow):
         pattern_group = QGroupBox("Pattern Detection")
         pattern_layout = QVBoxLayout()
 
-        self.abcd_checkbox = QCheckBox("Formed ABCD Patterns")
-        self.abcd_checkbox.setChecked(True)
-        pattern_layout.addWidget(self.abcd_checkbox)
+        # Removed basic formed patterns - only keeping strict and unstrict
 
-        self.xabcd_checkbox = QCheckBox("Formed XABCD Patterns")
-        self.xabcd_checkbox.setChecked(True)
-        pattern_layout.addWidget(self.xabcd_checkbox)
+        # Removed unstrict ABCD and XABCD patterns as requested
 
-        self.unformed_checkbox = QCheckBox("Unformed ABCD Patterns")
-        pattern_layout.addWidget(self.unformed_checkbox)
+        self.strict_abcd_checkbox = QCheckBox("Formed ABCD")
+        self.strict_abcd_checkbox.setToolTip("Detect ABCD patterns with strict price containment validation")
+        pattern_layout.addWidget(self.strict_abcd_checkbox)
 
-        self.unformed_xabcd_checkbox = QCheckBox("Unformed XABCD Patterns")
-        pattern_layout.addWidget(self.unformed_xabcd_checkbox)
+        self.strict_xabcd_checkbox = QCheckBox("Formed XABCD")
+        self.strict_xabcd_checkbox.setToolTip("Detect XABCD patterns with strict price containment validation")
+        pattern_layout.addWidget(self.strict_xabcd_checkbox)
+
+        self.comprehensive_abcd_checkbox = QCheckBox("Unformed ABCD")
+        self.comprehensive_abcd_checkbox.setToolTip("Detect unformed ABCD patterns with strict price containment validation and optimized algorithms")
+        pattern_layout.addWidget(self.comprehensive_abcd_checkbox)
+
+        self.comprehensive_xabcd_checkbox = QCheckBox("Unformed XABCD")
+        self.comprehensive_xabcd_checkbox.setToolTip("Detect unformed XABCD patterns with strict price containment validation and horizontal D lines")
+        pattern_layout.addWidget(self.comprehensive_xabcd_checkbox)
 
         # Add separator line
         separator = QFrame()
@@ -2354,10 +2506,7 @@ class HarmonicPatternDetector(QMainWindow):
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         pattern_layout.addWidget(separator)
 
-        # Add Show All Patterns checkbox
-        self.show_all_patterns_checkbox = QCheckBox("Show All Patterns in New Window")
-        self.show_all_patterns_checkbox.setToolTip("Display all detected patterns simultaneously in a new popup window")
-        pattern_layout.addWidget(self.show_all_patterns_checkbox)
+        # Removed Show All Patterns checkbox - patterns now open in PatternViewerWindow by default
 
         self.detect_patterns_btn = QPushButton("Detect Patterns")
         self.detect_patterns_btn.clicked.connect(self.detectPatterns)
@@ -2834,18 +2983,36 @@ class HarmonicPatternDetector(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load data: {str(e)}")
 
+    def onDownloadAllToggled(self):
+        """Handle the download all checkbox toggle"""
+        if self.download_all_checkbox.isChecked():
+            # Disable date fields when downloading all data
+            self.download_start_date.setEnabled(False)
+            self.download_end_date.setEnabled(False)
+        else:
+            # Enable date fields for custom range
+            self.download_start_date.setEnabled(True)
+            self.download_end_date.setEnabled(True)
+
     def downloadBinanceData(self):
         """Download data from Binance API"""
         try:
             # Get parameters
             symbol = self.symbol_combo.currentText().strip().upper()
             timeframe = self.timeframe_combo.currentText()
-            start_date = self.download_start_date.date().toPyDate()
-            end_date = self.download_end_date.date().toPyDate()
 
-            # Convert to datetime
-            start_date = datetime.combine(start_date, datetime.min.time())
-            end_date = datetime.combine(end_date, datetime.max.time())
+            # Check if downloading all available data
+            if self.download_all_checkbox.isChecked():
+                # Use earliest possible date (Binance launch) to current date
+                start_date = datetime(2017, 7, 1)  # Binance launch date
+                end_date = datetime.now()
+            else:
+                # Use custom date range
+                start_date = self.download_start_date.date().toPyDate()
+                end_date = self.download_end_date.date().toPyDate()
+                # Convert to datetime
+                start_date = datetime.combine(start_date, datetime.min.time())
+                end_date = datetime.combine(end_date, datetime.max.time())
 
             # Validate dates
             if start_date >= end_date:
@@ -3025,18 +3192,29 @@ class HarmonicPatternDetector(QMainWindow):
                 lows[i] <= lows[i-1] and lows[i] <= lows[i+1]
             )
 
-            # Add pivot points (prioritize high pivots in case of both)
+            # Add BOTH high and low pivots if they exist
+            # This ensures we capture ALL extremum points (not just alternating ones)
             if is_high_pivot:
                 self.extremum_points.append((timestamps[i], highs[i], True))
-            elif is_low_pivot:
+
+            # Use separate if (not elif) to capture both high and low on same candle
+            if is_low_pivot:
                 self.extremum_points.append((timestamps[i], lows[i], False))
 
         # Sort by date
         self.extremum_points.sort(key=lambda x: x[0])
 
-        # No cleanup - keep all extremums including consecutive highs/lows
+        # Count highs and lows separately for detailed reporting
+        high_count = sum(1 for _, _, is_high in self.extremum_points if is_high)
+        low_count = len(self.extremum_points) - high_count
 
-        self.status_bar.showMessage(f"Found {len(self.extremum_points)} extremum points")
+        # Log detailed counts
+        print(f"Extremum detection complete:")
+        print(f"  - High points: {high_count}")
+        print(f"  - Low points: {low_count}")
+        print(f"  - Total: {len(self.extremum_points)} points (ALL highs and lows)")
+
+        self.status_bar.showMessage(f"Found {len(self.extremum_points)} extremum points ({high_count} highs, {low_count} lows)")
 
         # Plot extremums
         self.plotExtremums()
@@ -3291,6 +3469,10 @@ class HarmonicPatternDetector(QMainWindow):
         """Detect harmonic patterns"""
         if DEBUG_MODE: print("detectPatterns called")
 
+        # Show immediate feedback
+        self.status_bar.showMessage("Starting pattern detection...")
+        QApplication.processEvents()  # Force UI update
+
         if not self.extremum_points:
             QMessageBox.warning(self, "Warning", "Please detect extremums first")
             return
@@ -3303,20 +3485,20 @@ class HarmonicPatternDetector(QMainWindow):
 
         # Get selected pattern types
         pattern_types = []
-        if self.abcd_checkbox.isChecked():
-            pattern_types.append('abcd')
-        if self.xabcd_checkbox.isChecked():
-            pattern_types.append('xabcd')
-        if self.unformed_checkbox.isChecked():
-            pattern_types.append('unformed')
-        if self.unformed_xabcd_checkbox.isChecked():
-            pattern_types.append('unformed_xabcd')
+        # Strict and comprehensive patterns (removed only unstrict patterns)
+        if hasattr(self, 'strict_abcd_checkbox') and self.strict_abcd_checkbox.isChecked():
+            pattern_types.append('strict_abcd')
+        if hasattr(self, 'strict_xabcd_checkbox') and self.strict_xabcd_checkbox.isChecked():
+            pattern_types.append('strict_xabcd')
+        if hasattr(self, 'comprehensive_abcd_checkbox') and self.comprehensive_abcd_checkbox.isChecked():
+            pattern_types.append('comprehensive_abcd')
+        if hasattr(self, 'comprehensive_xabcd_checkbox') and self.comprehensive_xabcd_checkbox.isChecked():
+            pattern_types.append('comprehensive_xabcd')
 
-        # If "Show All Patterns" is checked but no individual patterns are selected,
-        # automatically enable all pattern types
-        if self.show_all_patterns_checkbox.isChecked() and not pattern_types:
-            pattern_types = ['abcd', 'xabcd', 'unformed', 'unformed_xabcd']
-            if DEBUG_MODE: print("Show All Patterns enabled - detecting all pattern types")
+        # If no individual patterns are selected, automatically enable all pattern types
+        if not pattern_types:
+            pattern_types = ['strict_abcd', 'strict_xabcd', 'comprehensive_abcd', 'comprehensive_xabcd']
+            if DEBUG_MODE: print("No patterns selected - detecting all pattern types")
 
         if DEBUG_MODE: print(f"Selected pattern types: {pattern_types}")
 
@@ -3333,13 +3515,15 @@ class HarmonicPatternDetector(QMainWindow):
         if DEBUG_MODE: print("Creating pattern worker thread...")
         # Pass the data (filtered or original) to the worker
         data_to_use = self.filtered_data if self.filtered_data is not None else self.data
-        self.pattern_worker = PatternDetectionWorker(self.extremum_points, pattern_types, data_to_use)
+        self.pattern_worker = PatternDetectionWorker(self.extremum_points, pattern_types, data_to_use, self)
         self.pattern_worker.progress.connect(self.progress_bar.setValue)
         self.pattern_worker.status.connect(self.status_bar.showMessage)
         self.pattern_worker.finished.connect(self.onPatternsDetected)
 
-        # Disable button during detection
+        # Disable button during detection and change text
         self.detect_patterns_btn.setEnabled(False)
+        self.detect_patterns_btn.setText("Detecting... Please Wait")
+        self.progress_bar.setVisible(True)  # Make sure progress bar is visible
         if DEBUG_MODE: print("Starting pattern worker thread...")
         self.pattern_worker.start()
 
@@ -3347,6 +3531,7 @@ class HarmonicPatternDetector(QMainWindow):
         """Handle detected patterns"""
         self.detected_patterns = patterns
         self.detect_patterns_btn.setEnabled(True)
+        self.detect_patterns_btn.setText("Detect Patterns")  # Restore original text
         self.progress_bar.setValue(0)
 
         # Clean up the worker thread
@@ -3365,33 +3550,22 @@ class HarmonicPatternDetector(QMainWindow):
                 pattern_counts.append(f"{ptype.upper()}: {len(plist)} patterns")
 
         if total_patterns > 0:
-            # Check if show all patterns mode is selected
-            if self.show_all_patterns_checkbox.isChecked():
-                # Display all patterns in new popup window
-                QMessageBox.information(
-                    self,
-                    "Pattern Detection Complete",
-                    f"Found {total_patterns} patterns!\n\n" + "\n".join(pattern_counts) +
-                    "\n\nOpening All Patterns window..."
-                )
-                self.showAllPatternsWindow(patterns)
-            else:
-                # Open pattern viewer window as usual
-                QMessageBox.information(
-                    self,
-                    "Pattern Detection Complete",
-                    f"Found {total_patterns} patterns!\n\n" + "\n".join(pattern_counts) +
-                    "\n\nOpening Pattern Viewer window..."
-                )
+            # Always open pattern viewer window (removed show all patterns option)
+            QMessageBox.information(
+                self,
+                "Pattern Detection Complete",
+                f"Found {total_patterns} patterns!\n\n" + "\n".join(pattern_counts) +
+                "\n\nOpening Pattern Viewer window..."
+            )
 
-                data_to_use = self.filtered_data if self.filtered_data is not None else self.data
-                self.pattern_window = PatternViewerWindow(
-                    self,
-                    patterns,
-                    data_to_use,
-                    self.extremum_points
-                )
-                self.pattern_window.showMaximized()
+            data_to_use = self.filtered_data if self.filtered_data is not None else self.data
+            self.pattern_window = PatternViewerWindow(
+                self,
+                patterns,
+                data_to_use,
+                self.extremum_points
+            )
+            self.pattern_window.showMaximized()
 
         else:
             QMessageBox.information(
@@ -3503,36 +3677,41 @@ class HarmonicPatternDetector(QMainWindow):
     def showAllPatternsWindow(self, patterns):
         """Create and show a new window displaying all patterns"""
         try:
-            if DEBUG_MODE: print("Creating AllPatternsWindow...")
+            print("=== showAllPatternsWindow called ===")
+            print(f"Creating AllPatternsWindow...")
 
             # Debug: Check the structure of patterns
-            if DEBUG_MODE:
-                print(f"Pattern keys: {patterns.keys()}")
-                for ptype, plist in patterns.items():
-                    print(f"  {ptype}: {type(plist)}, length: {len(plist) if isinstance(plist, list) else 'not a list'}")
-                    if isinstance(plist, list) and len(plist) > 0:
-                        print(f"    First item type: {type(plist[0])}")
-                        if not isinstance(plist[0], dict):
-                            print(f"    WARNING: First item is not a dict: {plist[0]}")
+            print(f"Pattern keys: {patterns.keys()}")
+            for ptype, plist in patterns.items():
+                print(f"  {ptype}: {type(plist)}, length: {len(plist) if isinstance(plist, list) else 'not a list'}")
+                if isinstance(plist, list) and len(plist) > 0:
+                    print(f"    First item type: {type(plist[0])}")
+                    if not isinstance(plist[0], dict):
+                        print(f"    WARNING: First item is not a dict: {plist[0]}")
 
             # Count total patterns
             total_patterns = sum(len(plist) if isinstance(plist, list) else 0 for plist in patterns.values())
-            if DEBUG_MODE: print(f"Total patterns to display: {total_patterns}")
+            print(f"Total patterns to display: {total_patterns}")
 
             # Create all patterns window with original patterns dictionary
             data_to_use = self.filtered_data if self.filtered_data is not None else self.data
+            print(f"Data shape: {data_to_use.shape}")
+            print(f"Extremum points count: {len(self.extremum_points)}")
 
             # Use improved window if available, otherwise fallback to original
+            print(f"IMPROVED_DISPLAY_AVAILABLE = {IMPROVED_DISPLAY_AVAILABLE}")
             if IMPROVED_DISPLAY_AVAILABLE:
-                if DEBUG_MODE: print("Using ImprovedAllPatternsWindow...")
+                print("Using ImprovedAllPatternsWindow...")
+                print("About to create ImprovedAllPatternsWindow...")
                 self.all_patterns_window = ImprovedAllPatternsWindow(
                     self,
                     data_to_use,
                     patterns,  # Pass original patterns dictionary
                     self.extremum_points
                 )
+                print("ImprovedAllPatternsWindow created successfully")
             else:
-                if DEBUG_MODE: print("Using original AllPatternsWindow...")
+                print("Using original AllPatternsWindow...")
                 self.all_patterns_window = AllPatternsWindow(
                     self,
                     data_to_use,
@@ -3540,15 +3719,16 @@ class HarmonicPatternDetector(QMainWindow):
                     self.extremum_points
                 )
 
-            if DEBUG_MODE: print("Showing AllPatternsWindow...")
+            print("Showing AllPatternsWindow...")
             self.all_patterns_window.show()
-            if DEBUG_MODE: print("AllPatternsWindow should be visible now")
+            print("AllPatternsWindow should be visible now")
 
         except Exception as e:
             import traceback
-            if DEBUG_MODE:
-                print(f"Error creating AllPatternsWindow: {e}")
-                print(f"Traceback: {traceback.format_exc()}")
+            print(f"ERROR in showAllPatternsWindow: {e}")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error args: {e.args}")
+            print(f"Full traceback:\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"Failed to create All Patterns window:\n{str(e)}")
 
     # Dead code removed - pattern display is handled by PatternViewerWindow
@@ -3671,7 +3851,6 @@ class HarmonicPatternDetector(QMainWindow):
     def resetView(self):
         """Reset chart view"""
         self.main_chart.autoRange()
-        self.pattern_chart.autoRange()
 
     def showAbout(self):
         """Show about dialog"""

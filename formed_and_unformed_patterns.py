@@ -321,7 +321,7 @@ def detect_xabcd_patterns_fast(extremum_points: List[Tuple], log_details: bool =
     return patterns
 
 
-def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.DataFrame = None, log_details: bool = False, max_patterns: int = 100) -> List[Dict]:
+def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.DataFrame = None, log_details: bool = False, max_patterns: int = 20) -> List[Dict]:
     """
     Fast detection of unformed XABCD patterns (missing D point).
 
@@ -335,7 +335,7 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
     """
     import time
     start_time = time.time()
-    TIMEOUT_SECONDS = 30  # Maximum time to spend on detection
+    TIMEOUT_SECONDS = 5  # Maximum time to spend on detection
 
     patterns = []
     n = len(extremum_points)

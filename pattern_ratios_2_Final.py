@@ -2,32 +2,32 @@
 
 # AB=CD pattern ratios
 ABCD_PATTERN_RATIOS = {
-    'AB=CD_bull_1a': {'retr': (42, 58), 'proj': (192, 208), 'type': 2},  # ±8% around 50, 200
-    'AB=CD_bull_1b': {'retr': (92, 108), 'proj': (192, 208), 'type': 2},  # ±8% around 100, 200
+    'AB=CD_bull_1a': {'retr': (42, 58), 'proj': (192, 208), 'type': 2},  # ?8% around 50, 200
+    'AB=CD_bull_1b': {'retr': (92, 108), 'proj': (192, 208), 'type': 2},  # ?8% around 100, 200
 
-    'AB=CD_bull_2': {'retr': (62.7, 78.7), 'proj': (133.4, 149.4), 'type': 2},  # ±8% around 70.7, 141.4
-    'AB=CD_bull_3': {'retr': (80.6, 96.6), 'proj': (105.0, 121.0), 'type': 2},  # ±8% around 88.6, 113
-    'AB=CD_bull_4': {'retr': (53.8, 69.8), 'proj': (153.8, 169.8), 'type': 2},  # ±8% around 61.8, 161.8
-    'AB=CD_bull_5': {'retr': (70.6, 86.6), 'proj': (119.2, 135.2), 'type': 2},  # ±8% around 78.6, 127.2
+    'AB=CD_bull_2': {'retr': (62.7, 78.7), 'proj': (133.4, 149.4), 'type': 2},  # ?8% around 70.7, 141.4
+    'AB=CD_bull_3': {'retr': (80.6, 96.6), 'proj': (105.0, 121.0), 'type': 2},  # ?8% around 88.6, 113
+    'AB=CD_bull_4': {'retr': (53.8, 69.8), 'proj': (153.8, 169.8), 'type': 2},  # ?8% around 61.8, 161.8
+    'AB=CD_bull_5': {'retr': (70.6, 86.6), 'proj': (119.2, 135.2), 'type': 2},  # ?8% around 78.6, 127.2
 
     'AB=CD_bull_6a': {'retr': (30.2, 46.2), 'proj': (216.0, 232.0), 'type': 2}, #[38.2, 224] # 38.2, [161.8, 224,261.8,314,361.8]
     'AB=CD_bull_6b': {'retr': (30.2, 46.2), 'proj': (253.8, 269.8), 'type': 2}, #[38.2, 261.8] 
     'AB=CD_bull_6c': {'retr': (30.2, 46.2), 'proj': (306.0, 322.0), 'type': 2}, #[38.2, 314] 
     'AB=CD_bull_6d': {'retr': (30.2, 46.2), 'proj': (353.8, 369.8), 'type': 2}, #[38.2, 361.8] 
-    'AB=CD_bull_6e': {'retr': (30.2, 46.2), 'proj': (153.8, 169.8), 'type': 2},  # ±8% around 38.2, 161.8
-    #'AB=CD_bull_6f': {'retr': (30.2, 46.2), 'proj': (153.8, 169.8), 'type': 2},  # ±2% around 38.2, 161.8
+    'AB=CD_bull_6e': {'retr': (30.2, 46.2), 'proj': (153.8, 169.8), 'type': 2},  # ?8% around 38.2, 161.8
+    #'AB=CD_bull_6f': {'retr': (30.2, 46.2), 'proj': (153.8, 169.8), 'type': 2},  # ?2% around 38.2, 161.8
 }
 
 # original AB=CD pattern ratios
 # ABCD_PATTERN_RATIOS = {
-#     'AB=CD_bull_1': {'retr': (73.5, 76.5), 'proj': (196, 204), 'type': 2},  # ±2% around 75, 200
-#     'AB=CD_bull_2': {'retr': (69.3, 72.1), 'proj': (138.6, 144.2), 'type': 2},  # ±2% around 70.7, 141.4
-#     'AB=CD_bull_3': {'retr': (86.8, 90.4), 'proj': (110.7, 115.3), 'type': 2},  # ±2% around 88.6, 113
-#     'AB=CD_bull_4': {'retr': (60.6, 63.0), 'proj': (158.6, 165.0), 'type': 2},  # ±2% around 61.8, 161.8
-#     'AB=CD_bull_5': {'retr': (77.0, 80.2), 'proj': (124.7, 129.7), 'type': 2},  # ±2% around 78.6, 127.2
+#     'AB=CD_bull_1': {'retr': (73.5, 76.5), 'proj': (196, 204), 'type': 2},  # ?2% around 75, 200
+#     'AB=CD_bull_2': {'retr': (69.3, 72.1), 'proj': (138.6, 144.2), 'type': 2},  # ?2% around 70.7, 141.4
+#     'AB=CD_bull_3': {'retr': (86.8, 90.4), 'proj': (110.7, 115.3), 'type': 2},  # ?2% around 88.6, 113
+#     'AB=CD_bull_4': {'retr': (60.6, 63.0), 'proj': (158.6, 165.0), 'type': 2},  # ?2% around 61.8, 161.8
+#     'AB=CD_bull_5': {'retr': (77.0, 80.2), 'proj': (124.7, 129.7), 'type': 2},  # ?2% around 78.6, 127.2
 #     'AB=CD_bull_6': {'retr': (37.4, 39.0), 'proj': (219.5, 368.0), 'type': 2},  # 38.2, [224,261.8,314,361.8]
-#     'AB=CD_bull_7': {'retr': (37.4, 39.0), 'proj': (158.6, 165.0), 'type': 2},  # ±2% around 38.2, 161.8
-#     # 'AB=CD_bull_7': {'retr': (50, 60), 'proj': (160, 165), 'type': 2},  # ±2% around 38.2, 161.8
+#     'AB=CD_bull_7': {'retr': (37.4, 39.0), 'proj': (158.6, 165.0), 'type': 2},  # ?2% around 38.2, 161.8
+#     # 'AB=CD_bull_7': {'retr': (50, 60), 'proj': (160, 165), 'type': 2},  # ?2% around 38.2, 161.8
 # }
 
 # Add bearish versions of AB=CD patterns
@@ -661,7 +661,7 @@ XABCD_PATTERN_RATIOS = {
         'ad_xa': (92.0, 108.0),
         'type': 2
     },
-    'Fandango1_bull': {
+    'Fandango2_bull': {
         'ab_xa': (53.8, 69.8),
         'bc_ab': (53.8, 69.8),
         'cd_bc': (216.0, 232.0),
