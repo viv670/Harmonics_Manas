@@ -15,7 +15,6 @@ import pandas as pd
 import numpy as np
 import threading
 from pattern_ratios_2_Final import ABCD_PATTERN_RATIOS
-from pattern_data_standard import StandardPattern, PatternPoint, standardize_pattern_name, fix_unicode_issues
 
 # Configuration constants
 EPSILON = 1e-10
@@ -441,37 +440,28 @@ def detect_strict_abcd_patterns(extremum_points: List[Tuple],
                             patterns_rejected += 1
                             continue
 
-                        # Create standardized pattern object
-                        direction = 'bullish' if is_bullish else 'bearish'
-                        pattern_name_std = standardize_pattern_name(pattern_name, 'formed', direction)
-                        pattern_name_std = fix_unicode_issues(pattern_name_std)
-
-                        # Create pattern points with proper indices
-                        a_point = PatternPoint(timestamp=a_time, price=a_price, index=a_idx)
-                        b_point = PatternPoint(timestamp=b_time, price=b_price, index=b_idx)
-                        c_point = PatternPoint(timestamp=c_time, price=c_price, index=c_idx)
-                        d_point = PatternPoint(timestamp=d_time, price=d_price, index=d_idx)
-
-                        # Create standardized pattern
-                        standard_pattern = StandardPattern(
-                            name=pattern_name_std,
-                            pattern_type='ABCD',
-                            formation_status='formed',
-                            direction=direction,
-                            x_point=None,  # ABCD patterns don't have X point
-                            a_point=a_point,
-                            b_point=b_point,
-                            c_point=c_point,
-                            d_point=d_point,
-                            ratios={
+                        # Pattern is valid!
+                        pattern = {
+                            'name': f"{pattern_name}_strict",
+                            'type': 'bullish' if is_bullish else 'bearish',
+                            'points': {
+                                'A': {'time': a_time, 'price': a_price},
+                                'B': {'time': b_time, 'price': b_price},
+                                'C': {'time': c_time, 'price': c_price},
+                                'D': {'time': d_time, 'price': d_price}
+                            },
+                            'ratios': {
                                 'bc_retracement': bc_retracement,
                                 'cd_projection': cd_projection
                             },
-                            validation_type='strict_containment'
-                        )
-
-                        # Convert to legacy dict format for backward compatibility
-                        pattern = standard_pattern.to_legacy_dict()
+                            'indices': {
+                                'A': a_idx,
+                                'B': b_idx,
+                                'C': c_idx,
+                                'D': d_idx
+                            },
+                            'validation': 'strict_containment'
+                        }
 
                         patterns.append(pattern)
                         patterns_found += 1

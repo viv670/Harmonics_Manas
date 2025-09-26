@@ -146,7 +146,7 @@ def detect_abcd_patterns(extremum_points: List[Tuple], log_details: bool = False
     return patterns
 
 
-def detect_xabcd_patterns(extremum_points: List[Tuple], log_details: bool = True) -> List[Dict]:
+def detect_xabcd_patterns(extremum_points: List[Tuple], log_details: bool = False) -> List[Dict]:
     """
     Detect XABCD harmonic patterns (Bat, Butterfly, Gartley, etc.) from extremum points.
 
@@ -165,23 +165,16 @@ def detect_xabcd_patterns(extremum_points: List[Tuple], log_details: bool = True
             print(f"Not enough extremum points for XABCD: {n} < 5")
         return patterns
 
-    # Limit search for performance (O(n^5) complexity)
-    max_lookback = 15  # Reduced for better performance
-
     if log_details:
         print(f"Searching for XABCD patterns with {n} extremum points...")
-        if n > 50:
-            print(f"WARNING: {n} extremum points may take a long time. Consider using a higher Length parameter.")
 
-    # Only process recent patterns if too many extremum points
-    start_idx = max(0, n - 100) if n > 100 else 0
-
+    # Use ALL extremum points (no artificial limits)
     patterns_checked = 0
-    for x_idx in range(start_idx, n - 4):
-        for a_idx in range(x_idx + 1, min(x_idx + max_lookback, n - 3)):
-            for b_idx in range(a_idx + 1, min(a_idx + max_lookback, n - 2)):
-                for c_idx in range(b_idx + 1, min(b_idx + max_lookback, n - 1)):
-                    for d_idx in range(c_idx + 1, min(c_idx + max_lookback, n)):
+    for x_idx in range(n - 4):
+        for a_idx in range(x_idx + 1, n - 3):
+            for b_idx in range(a_idx + 1, n - 2):
+                for c_idx in range(b_idx + 1, n - 1):
+                    for d_idx in range(c_idx + 1, n):
 
                         # Get points
                         X = extremum_points[x_idx]
@@ -428,12 +421,11 @@ def detect_unformed_xabcd_patterns(extremum_points: List[Tuple], log_details: bo
     if n < 4:
         return patterns
 
-    max_lookback = 20
-
+    # Use ALL extremum points (no artificial limits)
     for x_idx in range(n - 3):
-        for a_idx in range(x_idx + 1, min(x_idx + max_lookback, n - 2)):
-            for b_idx in range(a_idx + 1, min(a_idx + max_lookback, n - 1)):
-                for c_idx in range(b_idx + 1, min(b_idx + max_lookback, n)):
+        for a_idx in range(x_idx + 1, n - 2):
+            for b_idx in range(a_idx + 1, n - 1):
+                for c_idx in range(b_idx + 1, n):
 
                     X = extremum_points[x_idx]
                     A = extremum_points[a_idx]

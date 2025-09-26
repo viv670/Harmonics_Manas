@@ -1,6 +1,6 @@
 """
 Ultra-Fast Strict XABCD Pattern Detection using Sliding Window Algorithm
-Handles ALL extremum points efficiently with O(n?) complexity instead of O(n?)
+Handles ALL extremum points efficiently with O(n²) complexity instead of O(n⁵)
 """
 
 from typing import List, Dict, Tuple, Optional
@@ -28,44 +28,44 @@ def validate_price_containment_fast(
 
     if is_bullish:
         # Bullish pattern validation
-        # 1. X->A: No low between X and A breaks X
+        # 1. X→A: No low between X and A breaks X
         if x_idx + 1 < a_idx and np.any(lows[x_idx+1:a_idx] < x_price):
             return False
 
-        # 2. A->B: No high between X and B exceeds A
+        # 2. A→B: No high between X and B exceeds A
         if x_idx + 1 < b_idx and np.any(highs[x_idx+1:b_idx] > a_price):
             return False
 
-        # 3. B->C: No low between A and C breaks B
+        # 3. B→C: No low between A and C breaks B
         if a_idx + 1 < c_idx and np.any(lows[a_idx+1:c_idx] < b_price):
             return False
 
-        # 4. C->D: No high between B and D exceeds C
+        # 4. C→D: No high between B and D exceeds C
         if b_idx + 1 < d_idx and np.any(highs[b_idx+1:d_idx] > c_price):
             return False
 
-        # 5. C->D: No low between C and D breaks D
+        # 5. C→D: No low between C and D breaks D
         if c_idx + 1 < d_idx and np.any(lows[c_idx+1:d_idx] < d_price):
             return False
     else:
         # Bearish pattern validation
-        # 1. X->A: No high between X and A exceeds X
+        # 1. X→A: No high between X and A exceeds X
         if x_idx + 1 < a_idx and np.any(highs[x_idx+1:a_idx] > x_price):
             return False
 
-        # 2. A->B: No low between X and B breaks A
+        # 2. A→B: No low between X and B breaks A
         if x_idx + 1 < b_idx and np.any(lows[x_idx+1:b_idx] < a_price):
             return False
 
-        # 3. B->C: No high between A and C exceeds B
+        # 3. B→C: No high between A and C exceeds B
         if a_idx + 1 < c_idx and np.any(highs[a_idx+1:c_idx] > b_price):
             return False
 
-        # 4. C->D: No low between B and D breaks C
+        # 4. C→D: No low between B and D breaks C
         if b_idx + 1 < d_idx and np.any(lows[b_idx+1:d_idx] < c_price):
             return False
 
-        # 5. C->D: No high between C and D exceeds D
+        # 5. C→D: No high between C and D exceeds D
         if c_idx + 1 < d_idx and np.any(highs[c_idx+1:d_idx] > d_price):
             return False
 
@@ -106,109 +106,12 @@ def identify_pattern_name(ab_xa: float, bc_ab: float, cd_bc: float, ad_xa: float
     return None
 
 
-def calculate_horizontal_d_lines(x_price: float, a_price: float, b_price: float, c_price: float,
-                                pattern_name: str, is_bullish: bool) -> List[float]:
-    """
-    Calculate horizontal D lines for XABCD patterns based on pattern ratios.
-    This follows the same algorithm as comprehensive_xabcd_patterns.py
-
-    Args:
-        x_price, a_price, b_price, c_price: The X, A, B, C point prices
-        pattern_name: The identified pattern name (e.g., 'Gartley1_bull')
-        is_bullish: Whether the pattern is bullish or bearish
-
-    Returns:
-        List of horizontal price levels where D could complete
-    """
-    d_lines = []
-
-    # Find the pattern ratios from the pattern name
-    if pattern_name not in XABCD_PATTERN_RATIOS:
-        return []
-
-    ratios = XABCD_PATTERN_RATIOS[pattern_name]
-
-    # Calculate moves
-    xa_move = abs(a_price - x_price)
-    bc_move = abs(c_price - b_price)
-
-    if xa_move == 0 or bc_move == 0:
-        return []
-
-    # Get ranges
-    ad_min, ad_max = ratios['ad_xa'][0], ratios['ad_xa'][1]
-    cd_min, cd_max = ratios['cd_bc'][0], ratios['cd_bc'][1]
-
-    # Calculate averages
-    ad_avg = (ad_min + ad_max) / 2
-    cd_avg = (cd_min + cd_max) / 2
-
-    # Method 1: Fix AD ratios, then clamp with CD ratios
-    for ad_ratio in [ad_avg, ad_max, ad_min]:
-        projected_ad = xa_move * (ad_ratio / 100)
-        if is_bullish:
-            d_from_ad = a_price - projected_ad  # D below A
-        else:
-            d_from_ad = a_price + projected_ad  # D above A
-
-        # Now validate/clamp with CD ratio
-        cd_move_implied = abs(d_from_ad - c_price)
-        if bc_move > 0:
-            cd_ratio_implied = (cd_move_implied / bc_move) * 100
-            # Clamp CD ratio to valid range
-            cd_ratio_clamped = max(cd_min, min(cd_max, cd_ratio_implied))
-            # Recalculate D with clamped CD ratio
-            projected_cd_clamped = bc_move * (cd_ratio_clamped / 100)
-            if is_bullish:
-                d_final = c_price - projected_cd_clamped  # D below C
-            else:
-                d_final = c_price + projected_cd_clamped  # D above C
-        else:
-            d_final = d_from_ad
-
-        d_lines.append(d_final)
-
-    # Method 2: Fix CD ratios, then clamp with AD ratios
-    for cd_ratio in [cd_avg, cd_max, cd_min]:
-        projected_cd = bc_move * (cd_ratio / 100)
-        if is_bullish:
-            d_from_cd = c_price - projected_cd  # D below C
-        else:
-            d_from_cd = c_price + projected_cd  # D above C
-
-        # Now validate/clamp with AD ratio
-        ad_move_implied = abs(a_price - d_from_cd)
-        if xa_move > 0:
-            ad_ratio_implied = (ad_move_implied / xa_move) * 100
-            # Clamp AD ratio to valid range
-            ad_ratio_clamped = max(ad_min, min(ad_max, ad_ratio_implied))
-            # Recalculate D with clamped AD ratio
-            projected_ad_clamped = xa_move * (ad_ratio_clamped / 100)
-            if is_bullish:
-                d_final = a_price - projected_ad_clamped  # D below A
-            else:
-                d_final = a_price + projected_ad_clamped  # D above A
-        else:
-            d_final = d_from_cd
-
-        d_lines.append(d_final)
-
-    # Remove duplicates (within 0.1 tolerance)
-    unique_d_lines = []
-    for d_price in d_lines:
-        is_duplicate = any(abs(d_price - existing) < 0.1 for existing in unique_d_lines)
-        if not is_duplicate:
-            unique_d_lines.append(d_price)
-
-    return unique_d_lines
-
-
 def detect_strict_xabcd_patterns(
     extremum_points: List[Tuple],
     df: pd.DataFrame,
     log_details: bool = False,
     max_patterns: Optional[int] = None,
-    max_window: int = None  # Maximum distance between X and D (None = no limit)
+    max_window: int = 100  # Maximum distance between X and D
 ) -> List[Dict]:
     """
     Ultra-efficient strict XABCD pattern detection using sliding window approach.
@@ -219,7 +122,7 @@ def detect_strict_xabcd_patterns(
     3. Smart indexing to avoid redundant checks
     4. Vectorized operations where possible
 
-    Time complexity: O(n? ? w) where w is window size (constant)
+    Time complexity: O(n² × w) where w is window size (constant)
     Space complexity: O(n)
     """
 
@@ -267,11 +170,11 @@ def detect_strict_xabcd_patterns(
             if max_patterns and len(patterns) >= max_patterns:
                 return
 
-            # Find valid A points (must be after X, within window if limit exists)
+            # Find valid A points (must be after X, within window)
             a_candidates = [
                 (a_idx, a_time, a_price)
                 for a_idx, a_time, a_price in a_points
-                if a_idx > x_idx and (max_window is None or a_idx - x_idx <= max_window)
+                if a_idx > x_idx and a_idx - x_idx <= max_window
             ]
 
             for a_idx, a_time, a_price in a_candidates:
@@ -296,7 +199,7 @@ def detect_strict_xabcd_patterns(
                 b_candidates = [
                     (b_idx, b_time, b_price)
                     for b_idx, b_time, b_price in b_points
-                    if b_idx > a_idx and (max_window is None or b_idx - x_idx <= max_window)
+                    if b_idx > a_idx and b_idx - x_idx <= max_window
                 ]
 
                 for b_idx, b_time, b_price in b_candidates:
@@ -320,7 +223,7 @@ def detect_strict_xabcd_patterns(
                     c_candidates = [
                         (c_idx, c_time, c_price)
                         for c_idx, c_time, c_price in c_points
-                        if c_idx > b_idx and (max_window is None or c_idx - x_idx <= max_window)
+                        if c_idx > b_idx and c_idx - x_idx <= max_window
                     ]
 
                     for c_idx, c_time, c_price in c_candidates:
@@ -344,7 +247,7 @@ def detect_strict_xabcd_patterns(
                         d_candidates = [
                             (d_idx, d_time, d_price)
                             for d_idx, d_time, d_price in d_points
-                            if d_idx > c_idx and (max_window is None or d_idx - x_idx <= max_window)
+                            if d_idx > c_idx and d_idx - x_idx <= max_window
                         ]
 
                         for d_idx, d_time, d_price in d_candidates:
@@ -387,12 +290,6 @@ def detect_strict_xabcd_patterns(
 
                                 # Only add pattern if it matches a defined pattern exactly
                                 if pattern_name:
-                                    # Calculate d_lines for this pattern
-                                    d_lines = calculate_horizontal_d_lines(
-                                        x_price, a_price, b_price, c_price,
-                                        pattern_name, is_bullish
-                                    )
-
                                     pattern = {
                                         'type': 'strict_xabcd',
                                         'name': pattern_name,
@@ -402,8 +299,7 @@ def detect_strict_xabcd_patterns(
                                             'A': {'time': a_time, 'price': a_price},
                                             'B': {'time': b_time, 'price': b_price},
                                             'C': {'time': c_time, 'price': c_price},
-                                            'D': {'time': d_time, 'price': d_price},
-                                            'D_projected': {'d_lines': d_lines}  # Add d_lines like unformed patterns
+                                            'D': {'time': d_time, 'price': d_price}
                                         },
                                         'ratios': {
                                             'ab_xa': ab_xa_ratio,

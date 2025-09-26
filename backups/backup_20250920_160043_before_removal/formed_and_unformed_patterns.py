@@ -90,7 +90,7 @@ def detect_abcd_patterns_fast(extremum_points: List[Tuple], log_details: bool = 
                     for d_idx, d_time, d_price in valid_d:
                         # Calculate CD projection
                         cd_move = abs(d_price - c_price)
-                        if bc_move == 0:
+                        if cd_move == 0:
                             continue
                         cd_projection = (cd_move / bc_move) * 100
 
@@ -321,17 +321,22 @@ def detect_xabcd_patterns_fast(extremum_points: List[Tuple], log_details: bool =
     return patterns
 
 
-def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.DataFrame = None, log_details: bool = False) -> List[Dict]:
+def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.DataFrame = None, log_details: bool = False, max_patterns: int = 20) -> List[Dict]:
     """
     Fast detection of unformed XABCD patterns (missing D point).
 
     Args:
         extremum_points: List of tuples (timestamp, price, is_high)
         log_details: Whether to print detailed logs
+        max_patterns: Maximum number of patterns to return (default 100)
 
     Returns:
         List of dictionaries containing pattern information with projected D point
     """
+    import time
+    start_time = time.time()
+    TIMEOUT_SECONDS = 5  # Maximum time to spend on detection
+
     patterns = []
     n = len(extremum_points)
 
@@ -348,28 +353,51 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
     lows = [(i, ep[0], ep[1]) for i, ep in enumerate(extremum_points) if not ep[2]]
 
     patterns_found = 0
+    MAX_PATTERNS_PER_TYPE = 3  # Reduced from 5 to 3 for better performance
+    combinations_checked = 0
+    MAX_COMBINATIONS = 50000  # Hard limit on combinations to check
 
     for pattern_name, ratios in XABCD_PATTERN_RATIOS.items():
+        patterns_for_this_type = 0  # Track patterns for this specific type
         is_bullish = 'bull' in pattern_name
+        pattern_completed = False  # Flag to break out of nested loops
 
         if is_bullish:
-            x_candidates = lows
-            a_candidates = highs
-            b_candidates = lows
-            c_candidates = highs
+            x_candidates = lows[-100:]  # Limit to last 100 lows for performance
+            a_candidates = highs[-100:]  # Limit to last 100 highs for performance
+            b_candidates = lows[-100:]
+            c_candidates = highs[-100:]
         else:
-            x_candidates = highs
-            a_candidates = lows
-            b_candidates = highs
-            c_candidates = lows
+            x_candidates = highs[-100:]  # Limit to last 100 highs for performance
+            a_candidates = lows[-100:]  # Limit to last 100 lows for performance
+            b_candidates = highs[-100:]
+            c_candidates = lows[-100:]
 
         # Iterate through A candidates
         for a_idx, a_time, a_price in a_candidates:
+            if pattern_completed:
+                break
+
+            # Check timeout
+            if time.time() - start_time > TIMEOUT_SECONDS:
+                if log_details:
+                    print(f"Timeout reached after {TIMEOUT_SECONDS} seconds")
+                return patterns
 
             # Find valid X points (before A)
             valid_x = [x for x in x_candidates if x[0] < a_idx]
 
             for x_idx, x_time, x_price in valid_x:
+                if pattern_completed:
+                    break
+
+                # Check combination limits
+                combinations_checked += 1
+                if combinations_checked > MAX_COMBINATIONS:
+                    if log_details:
+                        print(f"Maximum combinations limit {MAX_COMBINATIONS} reached")
+                    return patterns
+
                 xa_move = abs(a_price - x_price)
                 if xa_move == 0:
                     continue
@@ -378,6 +406,16 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
                 valid_b = [b for b in b_candidates if b[0] > a_idx]
 
                 for b_idx, b_time, b_price in valid_b:
+                    if pattern_completed:
+                        break
+
+                    # Check timeout every 1000 combinations
+                    if combinations_checked % 1000 == 0:
+                        if time.time() - start_time > TIMEOUT_SECONDS:
+                            if log_details:
+                                print(f"Timeout reached after {TIMEOUT_SECONDS} seconds")
+                            return patterns
+
                     ab_move = abs(b_price - a_price)
                     if ab_move == 0:
                         continue
@@ -391,6 +429,8 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
                     valid_c = [c for c in c_candidates if c[0] > b_idx]
 
                     for c_idx, c_time, c_price in valid_c:
+                        if pattern_completed:
+                            break
                         bc_move = abs(c_price - b_price)
                         if bc_move == 0:
                             continue
@@ -409,6 +449,17 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
                             # Bearish: X > A, B > A, C < B
                             if not (x_price > a_price and b_price > a_price and c_price < b_price):
                                 continue
+
+                        # Early termination check before complex calculations
+                        if patterns_for_this_type >= MAX_PATTERNS_PER_TYPE:
+                            pattern_completed = True
+                            break
+
+                        # Check overall pattern limit before expensive calculations
+                        if len(patterns) >= max_patterns:
+                            if log_details:
+                                print(f"Reached maximum pattern limit of {max_patterns}")
+                            return patterns
 
                         # Generate 6-line tolerance system with proper clamping
                         d_lines = []
@@ -517,6 +568,7 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
                                     if pattern_is_formed:
                                         continue
 
+
                         pattern = {
                             'name': f"{pattern_name}_unformed",
                             'type': 'bullish' if is_bullish else 'bearish',
@@ -538,12 +590,15 @@ def detect_unformed_xabcd_patterns_fast(extremum_points: List[Tuple], df: pd.Dat
                         }
                         patterns.append(pattern)
                         patterns_found += 1
+                        patterns_for_this_type += 1
 
                         if log_details:
                             print(f"Found unformed {pattern_name}: {len(unique_d_lines)} D projections")
 
-                        # Continue checking for more C points
-                        # Removed break to find all valid patterns
+                        # Set completion flag if we've found enough patterns of this type
+                        if patterns_for_this_type >= MAX_PATTERNS_PER_TYPE:
+                            pattern_completed = True
+                            break
 
     if log_details:
         print(f"Unformed XABCD search complete. Found {patterns_found} patterns.")

@@ -8,7 +8,6 @@ This module provides:
 3. Horizontal line calculation for projected D points (not PRZ zones)
 4. Optimized performance with pattern lookup
 5. Validation that price doesn't violate C after formation
-6. Unified pattern data structure for compatibility
 """
 
 from typing import List, Tuple, Dict, Set, Optional
@@ -16,7 +15,6 @@ import pandas as pd
 import numpy as np
 import threading
 from pattern_ratios_2_Final import XABCD_PATTERN_RATIOS
-from pattern_data_standard import StandardPattern, PatternPoint, standardize_pattern_name, fix_unicode_issues
 
 # Configuration constants
 EPSILON = 1e-10
@@ -212,13 +210,6 @@ def validate_price_containment_bearish_xabcd(df: pd.DataFrame,
 
 def find_candle_index_xabcd(df: pd.DataFrame, timestamp, time_tolerance=pd.Timedelta(minutes=1)):
     """Helper function to find candle index in DataFrame"""
-    # If timestamp is already an integer index, return it directly
-    if isinstance(timestamp, (int, np.integer)):
-        if 0 <= timestamp < len(df):
-            return timestamp
-        return None
-
-    # Otherwise handle as timestamp
     if 'timestamp' not in df.columns:
         df_copy = df.copy()
         if isinstance(df.index, pd.DatetimeIndex):
@@ -371,8 +362,8 @@ def calculate_horizontal_d_lines(x_price: float, a_price: float, b_price: float,
 def detect_strict_unformed_xabcd_patterns(extremum_points: List[Tuple],
                                          df: pd.DataFrame,
                                          log_details: bool = False,
-                                         max_patterns: int = None,
-                                         max_search_window: int = None) -> List[Dict]:
+                                         max_patterns: int = 50,
+                                         max_search_window: int = 30) -> List[Dict]:
     """
     Detect strict unformed XABCD patterns (4-point patterns X-A-B-C with projected D).
 
@@ -380,8 +371,8 @@ def detect_strict_unformed_xabcd_patterns(extremum_points: List[Tuple],
         extremum_points: List of tuples (timestamp, price, is_high)
         df: DataFrame with OHLC data for validation
         log_details: Whether to print detailed logs
-        max_patterns: IGNORED - NO LIMITS APPLIED
-        max_search_window: IGNORED - NO LIMITS APPLIED
+        max_patterns: Maximum number of patterns to return
+        max_search_window: Maximum distance between pattern points
 
     Returns:
         List of dictionaries containing unformed XABCD patterns with horizontal D lines
@@ -418,18 +409,22 @@ def detect_strict_unformed_xabcd_patterns(extremum_points: List[Tuple],
     patterns_checked = 0
     patterns_rejected = 0
 
-    # Process ALL points - NO LIMITS for 100% certainty
+    # Process points in reverse chronological order for recent patterns
     for i in range(n - 4, -1, -1):
-        # NO pattern limit check - process everything
+        if patterns_found >= max_patterns:
+            break
 
-        for j in range(i + 1, n - 2):  # Check ALL j points
-            # NO pattern limit check - process everything
+        for j in range(i + 1, min(i + max_search_window, n - 2)):
+            if patterns_found >= max_patterns:
+                break
 
-            for k in range(j + 1, n - 1):  # Check ALL k points
-                # NO pattern limit check - process everything
+            for k in range(j + 1, min(j + max_search_window, n - 1)):
+                if patterns_found >= max_patterns:
+                    break
 
-                for l in range(k + 1, n):  # Check ALL l points
-                    # NO pattern limit check - process everything
+                for l in range(k + 1, min(k + max_search_window, n)):
+                    if patterns_found >= max_patterns:
+                        break
 
                     X, A, B, C = extremum_points[i], extremum_points[j], extremum_points[k], extremum_points[l]
 
@@ -534,39 +529,31 @@ def detect_strict_unformed_xabcd_patterns(extremum_points: List[Tuple],
                     # Use only the valid D lines
                     d_lines = valid_d_lines
 
-                    # Create standardized pattern object
-                    direction = 'bullish' if is_bullish else 'bearish'
-                    pattern_name = standardize_pattern_name(first_pattern['name'], 'unformed', direction)
-                    pattern_name = fix_unicode_issues(pattern_name)
-
-                    # Create pattern points with proper indices
-                    x_point = PatternPoint(timestamp=X[0], price=x_price, index=i)
-                    a_point = PatternPoint(timestamp=A[0], price=a_price, index=j)
-                    b_point = PatternPoint(timestamp=B[0], price=b_price, index=k)
-                    c_point = PatternPoint(timestamp=C[0], price=c_price, index=l)
-
-                    # Create standardized pattern
-                    standard_pattern = StandardPattern(
-                        name=pattern_name,
-                        pattern_type='XABCD',
-                        formation_status='unformed',
-                        direction=direction,
-                        x_point=x_point,
-                        a_point=a_point,
-                        b_point=b_point,
-                        c_point=c_point,
-                        d_point=None,  # Unformed patterns don't have D point
-                        d_lines=d_lines,
-                        ratios={
+                    # Create pattern object
+                    pattern = {
+                        'name': f"{first_pattern['name']}_unformed_strict",
+                        'type': 'bullish' if is_bullish else 'bearish',
+                        'formation': 'unformed',
+                        'points': {
+                            'X': {'time': X[0], 'price': x_price},
+                            'A': {'time': A[0], 'price': a_price},
+                            'B': {'time': B[0], 'price': b_price},
+                            'C': {'time': C[0], 'price': c_price},
+                            'D_projected': {'d_lines': d_lines}
+                        },
+                        'ratios': {
                             'ab_xa_retracement': ab_xa_retracement,
                             'bc_ab_projection': bc_ab_projection,
                             'matching_patterns': [p['name'] for p in matching_patterns_data]
                         },
-                        validation_type='strict_containment'
-                    )
-
-                    # Convert to legacy dict format for backward compatibility
-                    pattern = standard_pattern.to_legacy_dict()
+                        'indices': {
+                            'X': i,
+                            'A': j,
+                            'B': k,
+                            'C': l
+                        },
+                        'validation': 'strict_containment'
+                    }
 
                     patterns.append(pattern)
                     patterns_found += 1

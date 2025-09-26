@@ -6,7 +6,7 @@ Professional trading analysis tool for detecting harmonic patterns in financial 
 """
 
 # Configuration
-DEBUG_MODE = True  # Set to False for production
+DEBUG_MODE = False  # Set to False for production
 
 import sys
 import pandas as pd
@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QGroupBox, QTextEdit, QSplitter, QTabWidget,
     QMessageBox, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QProgressBar, QStatusBar, QToolBar, QDockWidget,
-    QDialog, QDialogButtonBox, QDoubleSpinBox, QScrollArea, QFrame
+    QDialog, QDialogButtonBox, QDoubleSpinBox, QScrollArea
 )
 from PyQt6.QtCore import Qt, QDate, pyqtSignal, QThread, QTimer, QPointF
 from PyQt6.QtGui import QAction, QKeySequence, QFont, QColor, QPen
@@ -76,34 +76,8 @@ from formed_and_unformed_patterns import (
     detect_unformed_xabcd_patterns_fast as detect_unformed_xabcd_patterns
 )
 
-# Import strict ABCD pattern detection
-from strict_abcd_patterns import detect_strict_abcd_patterns
-# Use the ultra-fast sliding window implementation
-from strict_xabcd_patterns import detect_strict_xabcd_patterns
-print("Using ULTRA-FAST strict XABCD detection (sliding window algorithm)")
-
-# Import comprehensive ABCD pattern detection
-from comprehensive_abcd_patterns import (
-    detect_strict_abcd_patterns as detect_comprehensive_strict_abcd,
-    detect_unformed_abcd_patterns_optimized as detect_comprehensive_unformed_abcd
-)
-print("Comprehensive ABCD pattern detection loaded")
-
-# Import comprehensive XABCD pattern detection
-from comprehensive_xabcd_patterns import detect_strict_unformed_xabcd_patterns as detect_comprehensive_unformed_xabcd
-from backtesting_dialog import BacktestingDialog
-print("Comprehensive XABCD pattern detection loaded")
-
 # Import Binance data downloader
 from binance_downloader import BinanceDataDownloader
-
-# Import improved pattern display system
-try:
-    from improved_pattern_display import ImprovedAllPatternsWindow
-    IMPROVED_DISPLAY_AVAILABLE = True
-except ImportError:
-    IMPROVED_DISPLAY_AVAILABLE = False
-    print("Warning: Improved pattern display not available")
 
 # Configure pyqtgraph for better appearance
 pg.setConfigOptions(antialias=True)
@@ -220,21 +194,17 @@ class PatternDetectionWorker(QThread):
     status = pyqtSignal(str)
     finished = pyqtSignal(dict)
 
-    def __init__(self, extremum_points, pattern_types, data=None, main_window=None):
+    def __init__(self, extremum_points, pattern_types, data=None):
         super().__init__()
         self.extremum_points = extremum_points
         self.pattern_types = pattern_types
         self.data = data  # Candlestick data for filtering unformed patterns
-        self.main_window = main_window
 
     def run(self):
         """Run pattern detection in background"""
         results = {
             'abcd': [],
             'xabcd': [],
-            'strict_abcd': [],
-            'comprehensive_abcd': [],
-            'comprehensive_xabcd': [],
             'unformed': [],
             'unformed_xabcd': []
         }
@@ -245,86 +215,34 @@ class PatternDetectionWorker(QThread):
 
             # Detect patterns based on selected types
             if 'abcd' in self.pattern_types:
-                self.status.emit("Detecting Basic ABCD patterns...")
-                if DEBUG_MODE: print("Detecting Basic ABCD patterns...")
+                self.status.emit("Detecting Formed ABCD patterns...")
+                if DEBUG_MODE: print("Detecting Formed ABCD patterns...")
                 results['abcd'] = self.detect_abcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['abcd'])} Basic ABCD patterns")
-                self.progress.emit(20)
-
-            if 'strict_abcd' in self.pattern_types:
-                self.status.emit("Detecting Strict ABCD patterns (with price containment)...")
-                if DEBUG_MODE: print("Detecting Strict ABCD patterns...")
-                results['strict_abcd'] = self.detect_strict_abcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['strict_abcd'])} Strict ABCD patterns")
-                self.progress.emit(30)
-
-            if 'comprehensive_abcd' in self.pattern_types:
-                self.status.emit("Detecting Unstrict ABCD patterns with comprehensive validation...")
-                if DEBUG_MODE: print("Detecting Comprehensive ABCD patterns (unstrict only)...")
-                results['comprehensive_abcd'] = self.detect_comprehensive_abcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['comprehensive_abcd'])} Unstrict ABCD patterns")
-                self.progress.emit(35)
-
-            if 'comprehensive_xabcd' in self.pattern_types:
-                self.status.emit("Detecting Unstrict XABCD patterns with comprehensive validation...")
-                if DEBUG_MODE: print("Detecting Comprehensive XABCD patterns (unstrict only)...")
-                results['comprehensive_xabcd'] = self.detect_comprehensive_xabcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['comprehensive_xabcd'])} Unstrict XABCD patterns")
-                self.progress.emit(40)
+                if DEBUG_MODE: print(f"Found {len(results['abcd'])} Formed ABCD patterns")
+                self.progress.emit(25)
 
             if 'xabcd' in self.pattern_types:
-                self.status.emit("Detecting Basic XABCD patterns...")
-                if DEBUG_MODE: print("Detecting Basic XABCD patterns...")
+                self.status.emit("Detecting Formed XABCD patterns...")
+                if DEBUG_MODE: print("Detecting Formed XABCD patterns...")
                 results['xabcd'] = self.detect_xabcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['xabcd'])} Basic XABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['xabcd'])} Formed XABCD patterns")
                 self.progress.emit(50)
 
-            if 'strict_xabcd' in self.pattern_types:
-                self.status.emit("Detecting Strict XABCD patterns (with price containment)...")
-                if DEBUG_MODE: print("Detecting Strict XABCD patterns...")
-                results['strict_xabcd'] = self.detect_strict_xabcd_patterns()
-                # Don't print count here - will print final count after deduplication
-                self.progress.emit(55)
-
-            if 'unstrict_abcd' in self.pattern_types:
-                self.status.emit("Detecting Unstrict ABCD patterns...")
-                if DEBUG_MODE: print("Detecting Unstrict ABCD patterns...")
+            if 'unformed' in self.pattern_types:
+                self.status.emit("Detecting Unformed ABCD patterns...")
+                if DEBUG_MODE: print("Detecting Unformed ABCD patterns...")
                 results['unformed'] = self.detect_unformed_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['unformed'])} Unstrict ABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['unformed'])} Unformed ABCD patterns")
                 self.progress.emit(75)
 
-            if 'unstrict_xabcd' in self.pattern_types:
-                self.status.emit("Detecting Unstrict XABCD patterns...")
-                if DEBUG_MODE: print("Detecting Unstrict XABCD patterns...")
+            if 'unformed_xabcd' in self.pattern_types:
+                self.status.emit("Detecting Unformed XABCD patterns...")
+                if DEBUG_MODE: print("Detecting Unformed XABCD patterns...")
                 results['unformed_xabcd'] = self.detect_unformed_xabcd_patterns()
-                if DEBUG_MODE: print(f"Found {len(results['unformed_xabcd'])} Unstrict XABCD patterns")
+                if DEBUG_MODE: print(f"Found {len(results['unformed_xabcd'])} Unformed XABCD patterns")
                 self.progress.emit(100)
 
-            # Validate that all results are lists of dictionaries
-            for ptype, plist in results.items():
-                if not isinstance(plist, list):
-                    if DEBUG_MODE: print(f"Warning: {ptype} is not a list: {type(plist)}")
-                    results[ptype] = []
-                else:
-                    # Filter out non-dictionary items
-                    valid_patterns = []
-                    for i, pattern in enumerate(plist):
-                        if isinstance(pattern, dict):
-                            valid_patterns.append(pattern)
-                        else:
-                            if DEBUG_MODE: print(f"Warning: {ptype}[{i}] is not a dict: {type(pattern)}")
-                    results[ptype] = valid_patterns
-
-            if DEBUG_MODE:
-                total_before_dedup = sum(len(p) for p in results.values())
-                print(f"Pattern detection complete. Total patterns before deduplication: {total_before_dedup}")
-
-            if DEBUG_MODE:
-                # Print final counts after deduplication
-                for pattern_type, patterns in results.items():
-                    if patterns:  # Only print non-empty pattern types
-                        print(f"Found {len(patterns)} {pattern_type.replace('_', ' ').title()} patterns (after deduplication)")
-                print(f"Total patterns after deduplication: {sum(len(p) for p in results.values())}")
+            if DEBUG_MODE: print(f"Pattern detection complete. Total patterns: {sum(len(p) for p in results.values())}")
             self.finished.emit(results)
 
         except Exception as e:
@@ -336,26 +254,6 @@ class PatternDetectionWorker(QThread):
     def detect_abcd_patterns(self):
         """Detect Formed ABCD patterns"""
         return detect_formed_abcd_patterns(self.extremum_points, log_details=True)
-
-    def detect_strict_abcd_patterns(self):
-        """Detect Strict Formed ABCD patterns with price containment validation"""
-        # Pass optimization parameters for better performance
-        return detect_strict_abcd_patterns(
-            self.extremum_points,
-            self.data,
-            log_details=False,  # Disable detailed logging for speed
-            max_patterns=None,   # No limit - detect ALL patterns
-        )
-
-    def detect_strict_xabcd_patterns(self):
-        """Detect Strict Formed XABCD patterns with price containment validation"""
-        return detect_strict_xabcd_patterns(
-            self.extremum_points,
-            self.data,
-            log_details=False,  # Disable detailed logging for speed
-            max_patterns=100,    # Increased limit to 100
-            max_window=100  # Use the optimized sliding window algorithm
-        )
 
     def detect_xabcd_patterns(self):
         """Detect Formed XABCD patterns"""
@@ -425,37 +323,6 @@ class PatternDetectionWorker(QThread):
         patterns = detect_unformed_abcd_patterns(self.extremum_points, log_details=False)
         return self.filter_unformed_patterns(patterns, is_xabcd=False)
 
-    def detect_comprehensive_abcd_patterns(self):
-        """Detect Comprehensive ABCD patterns (strict unformed only)"""
-        # Detect strict unformed ABCD patterns
-        unformed_patterns = detect_comprehensive_unformed_abcd(
-            self.extremum_points,
-            self.data,
-            log_details=False,
-            max_patterns=100,  # Increased limit since we're only getting unformed
-            strict_validation=True
-        )
-
-        # Filter unformed patterns
-        unformed_filtered = self.filter_unformed_patterns(unformed_patterns, is_xabcd=False)
-
-        return unformed_filtered
-
-    def detect_comprehensive_xabcd_patterns(self):
-        """Detect Comprehensive XABCD patterns (strict unformed only)"""
-        # Detect strict unformed XABCD patterns
-        unformed_patterns = detect_comprehensive_unformed_xabcd(
-            self.extremum_points,
-            self.data,
-            log_details=False,
-            max_patterns=100    # Increased limit to 100
-        )
-
-        # Filter unformed patterns
-        unformed_filtered = self.filter_unformed_patterns(unformed_patterns, is_xabcd=True)
-
-        return unformed_filtered
-
     def detect_unformed_xabcd_patterns(self):
         """Detect Unformed XABCD patterns"""
         print(f"Detecting Unformed XABCD patterns with {len(self.extremum_points)} points")
@@ -470,773 +337,9 @@ class PatternDetectionWorker(QThread):
         if len(extremums_to_use) > 5:
             print(f"  ... and {len(extremums_to_use) - 5} more")
 
-        patterns = detect_unformed_xabcd_patterns(extremums_to_use, df=self.data, log_details=True, max_patterns=100)
-
-        # Ensure patterns is a list
-        if not isinstance(patterns, list):
-            print(f"Warning: detect_unformed_xabcd_patterns returned {type(patterns)} instead of list")
-            patterns = []
-
+        patterns = detect_unformed_xabcd_patterns(extremums_to_use, df=self.data, log_details=True)
         print(f"Found {len(patterns)} Unformed XABCD patterns")
         return self.filter_unformed_patterns(patterns, is_xabcd=True)
-
-
-class AllPatternsWindow(QMainWindow):
-    """Window for displaying all detected patterns simultaneously with filtering"""
-
-    def __init__(self, parent, data, patterns, extremum_points):
-        super().__init__()  # Don't pass parent to prevent auto-closing
-        self.data = data
-        self.patterns = patterns  # Keep original patterns dictionary
-        self.extremum_points = extremum_points
-        self.pattern_lines = []
-        self.pattern_labels = []
-        self.visible_patterns = {}  # Track which patterns are visible
-
-        # Create mapping from extremum indices to data indices
-        self.extremum_to_data_idx = {}
-        for i, ext_point in enumerate(extremum_points):
-            if isinstance(ext_point, tuple) and len(ext_point) >= 3:
-                timestamp = ext_point[0]
-                try:
-                    # Convert to same format as data index if needed
-                    if hasattr(timestamp, 'to_pydatetime'):
-                        timestamp = timestamp.to_pydatetime()
-                    # Find the index in the data
-                    idx = self.data.index.get_loc(timestamp, method='nearest')
-                    self.extremum_to_data_idx[i] = idx
-                except:
-                    self.extremum_to_data_idx[i] = i
-
-        # Flatten all patterns into a single list with metadata
-        self.all_patterns = []
-        for ptype, plist in patterns.items():
-            for pattern in plist:
-                # Ensure pattern is a dictionary
-                if not isinstance(pattern, dict):
-                    if DEBUG_MODE:
-                        print(f"Warning: Pattern in {ptype} is not a dictionary: {type(pattern)}, content: {pattern}")
-                    continue
-                try:
-                    pattern_copy = pattern.copy()
-                    pattern_copy['pattern_type'] = ptype
-
-                    # Handle unformed patterns with D_projected zones/lines
-                    if 'points' in pattern_copy:
-                        points = pattern_copy['points']
-
-                        # Ensure all points have indices
-                        for point_name in ['A', 'B', 'C']:
-                            if point_name in points:
-                                point = points[point_name]
-                                if isinstance(point, dict) and 'index' not in point and 'time' in point:
-                                    point_time = point['time']
-                                    try:
-                                        if hasattr(point_time, 'to_pydatetime'):
-                                            point_time = point_time.to_pydatetime()
-                                        point['index'] = self.data.index.get_loc(point_time, method='nearest')
-                                    except:
-                                        pass  # Index will be set later if in indices dict
-
-                        # Convert D_projected zones/lines to a displayable point
-                        if 'D_projected' in points:
-                            d_proj = points['D_projected']
-
-                            # Get C point for time reference
-                            c_point = points.get('C', {})
-                            c_time = c_point.get('time')
-                            c_index = c_point.get('index')
-
-                            # If C doesn't have an index yet, calculate it
-                            if c_index is None and c_time is not None:
-                                try:
-                                    # Convert timestamp if needed
-                                    if hasattr(c_time, 'to_pydatetime'):
-                                        c_time = c_time.to_pydatetime()
-                                    c_index = self.data.index.get_loc(c_time, method='nearest')
-                                    c_point['index'] = c_index
-                                except:
-                                    c_index = len(self.data) - 20  # Fallback
-
-                            # Calculate D_projected point
-                            d_price = None
-                            d_time = None
-                            d_index = None
-
-                            # Handle prz_zones (for unformed ABCD)
-                            if isinstance(d_proj, dict) and 'prz_zones' in d_proj:
-                                zones = d_proj['prz_zones']
-                                if zones:
-                                    # Take the middle of the first zone
-                                    first_zone = zones[0] if isinstance(zones, list) else zones
-                                    if isinstance(first_zone, (list, tuple)) and len(first_zone) >= 2:
-                                        d_price = (first_zone[0] + first_zone[1]) / 2
-                                    elif isinstance(first_zone, (int, float)):
-                                        d_price = first_zone
-
-                            # Handle d_lines (for unformed XABCD)
-                            elif isinstance(d_proj, dict) and 'd_lines' in d_proj:
-                                lines = d_proj['d_lines']
-                                if lines:
-                                    # Take the average of all D lines
-                                    if isinstance(lines, list) and lines:
-                                        d_price = sum(lines) / len(lines)
-                                    elif isinstance(lines, (int, float)):
-                                        d_price = lines
-
-                            # If we got a D price, create a proper D_projected point
-                            if d_price is not None:
-                                # Project D point forward in time from C
-                                # Use 10 periods forward as projection (adjust as needed)
-                                if c_index is not None:
-                                    d_index = min(c_index + 10, len(self.data) - 1)
-                                    d_time = self.data.index[d_index]
-                                else:
-                                    # Fallback: use last data point
-                                    d_index = len(self.data) - 1
-                                    d_time = self.data.index[-1]
-
-                                # Replace D_projected with a proper point
-                                points['D_projected'] = {
-                                    'time': d_time,
-                                    'price': d_price,
-                                    'index': d_index
-                                }
-
-                                if DEBUG_MODE and ptype.startswith('unformed'):
-                                    print(f"Created D_projected for {pattern_copy.get('name', 'unknown')}: index={d_index}, price={d_price:.2f}")
-
-                    # Fix indices for XABCD patterns that use extremum indices
-                    if 'indices' in pattern_copy:
-                        indices = pattern_copy['indices']
-                        if 'points' in pattern_copy:
-                            points = pattern_copy['points']
-                            # Map X, A, B, C, D indices to actual data indices
-                            point_names = ['X', 'A', 'B', 'C', 'D'] if 'X' in indices else ['A', 'B', 'C', 'D']
-
-                            # Check if this is an unformed pattern with D_projected
-                            if 'D_projected' in points and 'D_projected' in indices:
-                                # Add D_projected to the list if not already there
-                                if 'D_projected' not in point_names:
-                                    point_names.append('D_projected')
-
-                            for point_name in point_names:
-                                if point_name in indices and point_name in points:
-                                    ext_idx = indices[point_name]
-                                    data_idx = self.extremum_to_data_idx.get(ext_idx, ext_idx)
-                                    points[point_name]['index'] = data_idx
-
-                    self.all_patterns.append(pattern_copy)
-                except Exception as e:
-                    if DEBUG_MODE:
-                        print(f"Error copying pattern in {ptype}: {e}, pattern: {pattern}")
-                    continue
-
-        # Initialize filtered patterns
-        self.filtered_patterns = self.all_patterns.copy()
-
-        # Get unique pattern names for checkboxes
-        self.unique_pattern_names = self.getUniquePatternNames()
-
-        # Debug: Show pattern counts by type
-        if DEBUG_MODE:
-            type_counts = {}
-            for pattern in self.all_patterns:
-                ptype = pattern.get('pattern_type', 'unknown')
-                type_counts[ptype] = type_counts.get(ptype, 0) + 1
-            print(f"AllPatternsWindow: Total patterns={len(self.all_patterns)}, by type: {type_counts}")
-            print(f"Unique pattern names found: {self.unique_pattern_names}")
-
-        self.setWindowTitle("All Patterns Viewer")
-        self.setGeometry(200, 200, 1400, 900)
-
-        self.initUI()
-
-    def getUniquePatternNames(self):
-        """Get all unique pattern names from all patterns"""
-        unique_names = set()
-        for pattern in self.all_patterns:
-            # Extract base pattern name without bull/bear suffix
-            name = pattern.get('name', '')
-            # Remove _unformed suffix if present
-            if '_unformed' in name:
-                name = name.replace('_unformed', '')
-            # Remove _bull or _bear suffix to get base name
-            base_name = name
-            for suffix in ['_bull', '_bear']:
-                if suffix in base_name:
-                    base_name = base_name.replace(suffix, '')
-            if base_name:
-                unique_names.add(base_name)
-        return sorted(list(unique_names))
-
-    def initUI(self):
-        """Initialize the UI with chart and filter controls"""
-        # Central widget with horizontal layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-
-        # Left side: Chart
-        chart_widget = QWidget()
-        chart_layout = QVBoxLayout(chart_widget)
-
-        # Chart widget
-        self.chart = pg.PlotWidget()
-        self.chart.showGrid(x=True, y=True, alpha=0.3)
-        self.chart.setLabel('left', 'Price')
-        self.chart.setLabel('bottom', 'Time')
-        chart_layout.addWidget(self.chart)
-
-        # Info label
-        self.info_label = QLabel(f"Total: {len(self.all_patterns)} patterns")
-        self.info_label.setStyleSheet("QLabel { padding: 10px; font-weight: bold; background-color: #f0f0f0; }")
-        chart_layout.addWidget(self.info_label)
-
-        main_layout.addWidget(chart_widget, 3)  # Chart gets 3/4 of space
-
-        # Right side: Filter controls
-        self.createFilterSidebar()
-        main_layout.addWidget(self.filter_sidebar, 1)  # Sidebar gets 1/4 of space
-
-        # Setup chart
-        self.setupChart()
-
-        # Initialize with filtered patterns to avoid showing too many
-        self.filtered_patterns = []
-        for pattern in self.all_patterns:
-            ptype = pattern.get('pattern_type', '')
-            # Only show formed patterns initially (unformed are unchecked by default)
-            if ptype in ['abcd', 'xabcd']:
-                self.filtered_patterns.append(pattern)
-
-        # Display initial filtered patterns
-        self.displayFilteredPatterns()
-
-    def createFilterSidebar(self):
-        """Create the filter sidebar with checkboxes"""
-        self.filter_sidebar = QWidget()
-        self.filter_sidebar.setMaximumWidth(350)
-        self.filter_sidebar.setStyleSheet("QWidget { background-color: #ffffff; border-left: 2px solid #cccccc; }")
-
-        filter_layout = QVBoxLayout(self.filter_sidebar)
-        filter_layout.setContentsMargins(10, 10, 10, 10)
-
-        # Title
-        title = QLabel("PATTERN FILTERS")
-        title.setStyleSheet("font-weight: bold; font-size: 14px; color: #000000; margin-bottom: 10px; background-color: #ffffff;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        filter_layout.addWidget(title)
-
-        # Count patterns by type and direction
-        self.pattern_counts = {
-            'abcd': 0,
-            'xabcd': 0,
-            'strict_abcd': 0,
-            'strict_xabcd': 0,
-            'comprehensive_abcd': 0,
-            'comprehensive_xabcd': 0,
-            'unformed': 0,
-            'unformed_xabcd': 0,
-            'bull': 0,
-            'bear': 0
-        }
-        for pattern in self.all_patterns:
-            ptype = pattern.get('pattern_type', '')
-            if ptype in self.pattern_counts:
-                self.pattern_counts[ptype] += 1
-
-            # Count bull/bear patterns
-            pattern_name = pattern.get('name', '').lower()
-            if 'bull' in pattern_name:
-                self.pattern_counts['bull'] += 1
-            elif 'bear' in pattern_name:
-                self.pattern_counts['bear'] += 1
-
-        # Pattern Type Filter Section
-        type_group = QGroupBox("Pattern Type")
-        type_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                margin-top: 10px;
-                color: #000000;
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                padding-top: 15px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-                background-color: #f0f0f0;
-            }
-        """)
-        type_layout = QVBoxLayout(type_group)
-
-        # Only show Strict and Unstrict pattern types (removed basic ABCD/XABCD)
-
-        # Formed ABCD checkbox
-        strict_count = self.pattern_counts.get('strict_abcd', 0)
-        self.strict_abcd_checkbox = QCheckBox(f"Formed ABCD ({strict_count})")
-        self.strict_abcd_checkbox.setChecked(True)  # Start checked
-        self.strict_abcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.strict_abcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.strict_abcd_checkbox)
-
-        # Formed XABCD checkbox
-        strict_xabcd_count = self.pattern_counts.get('strict_xabcd', 0)
-        self.strict_xabcd_checkbox = QCheckBox(f"Formed XABCD ({strict_xabcd_count})")
-        self.strict_xabcd_checkbox.setChecked(True)  # Start checked
-        self.strict_xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.strict_xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.strict_xabcd_checkbox)
-
-        # Unformed ABCD checkbox
-        comprehensive_count = self.pattern_counts.get('comprehensive_abcd', 0)
-        self.comprehensive_abcd_checkbox = QCheckBox(f"Unformed ABCD ({comprehensive_count})")
-        self.comprehensive_abcd_checkbox.setChecked(True)  # Start checked
-        self.comprehensive_abcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.comprehensive_abcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.comprehensive_abcd_checkbox)
-
-        # Unformed XABCD checkbox
-        comprehensive_xabcd_count = self.pattern_counts.get('comprehensive_xabcd', 0)
-        self.comprehensive_xabcd_checkbox = QCheckBox(f"Unformed XABCD ({comprehensive_xabcd_count})")
-        self.comprehensive_xabcd_checkbox.setChecked(True)  # Start checked
-        self.comprehensive_xabcd_checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; font-weight: bold; }")
-        self.comprehensive_xabcd_checkbox.stateChanged.connect(self.onPatternTypeChanged)
-        type_layout.addWidget(self.comprehensive_xabcd_checkbox)
-
-        filter_layout.addWidget(type_group)
-
-        # Bull/Bear Filter Section
-        direction_group = QGroupBox("Direction")
-        direction_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                margin-top: 10px;
-                color: #000000;
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                padding-top: 15px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-                background-color: #f0f0f0;
-            }
-        """)
-        direction_layout = QVBoxLayout(direction_group)
-
-        self.bull_checkbox = QCheckBox(f"Bullish Patterns ({self.pattern_counts['bull']})")
-        self.bull_checkbox.setChecked(True)
-        self.bull_checkbox.setStyleSheet("QCheckBox { color: #006400; font-weight: bold; background-color: transparent; }")
-        self.bull_checkbox.stateChanged.connect(self.applyFilters)
-        direction_layout.addWidget(self.bull_checkbox)
-
-        self.bear_checkbox = QCheckBox(f"Bearish Patterns ({self.pattern_counts['bear']})")
-        self.bear_checkbox.setChecked(True)
-        self.bear_checkbox.setStyleSheet("QCheckBox { color: #8B0000; font-weight: bold; background-color: transparent; }")
-        self.bear_checkbox.stateChanged.connect(self.applyFilters)
-        direction_layout.addWidget(self.bear_checkbox)
-
-        filter_layout.addWidget(direction_group)
-
-        # Specific Pattern Names Section
-        patterns_group = QGroupBox("Specific Patterns")
-        patterns_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                margin-top: 10px;
-                color: #000000;
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                padding-top: 15px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-                background-color: #f0f0f0;
-            }
-        """)
-
-        # Create scroll area for pattern checkboxes
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: #ffffff;
-                border: 1px solid #dddddd;
-            }
-        """)
-        scroll_content = QWidget()
-        scroll_content.setStyleSheet("background-color: #ffffff;")
-        patterns_layout = QVBoxLayout(scroll_content)
-
-        # Add "Select All" / "Deselect All" buttons
-        button_layout = QHBoxLayout()
-        select_all_btn = QPushButton("Select All")
-        select_all_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 5px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        select_all_btn.clicked.connect(self.selectAllPatterns)
-
-        deselect_all_btn = QPushButton("Deselect All")
-        deselect_all_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: none;
-                padding: 5px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #da190b;
-            }
-        """)
-        deselect_all_btn.clicked.connect(self.deselectAllPatterns)
-        button_layout.addWidget(select_all_btn)
-        button_layout.addWidget(deselect_all_btn)
-        patterns_layout.addLayout(button_layout)
-
-        # Create checkboxes for each unique pattern name
-        self.pattern_checkboxes = {}
-        for pattern_name in self.unique_pattern_names:
-            checkbox = QCheckBox(pattern_name)
-            checkbox.setChecked(True)
-            checkbox.setStyleSheet("QCheckBox { color: #000000; background-color: transparent; }")
-            checkbox.stateChanged.connect(self.applyFilters)
-            self.pattern_checkboxes[pattern_name] = checkbox
-            patterns_layout.addWidget(checkbox)
-
-        scroll_area.setWidget(scroll_content)
-        patterns_group_layout = QVBoxLayout(patterns_group)
-        patterns_group_layout.addWidget(scroll_area)
-
-        filter_layout.addWidget(patterns_group)
-
-        # Add stretch at the bottom
-        filter_layout.addStretch()
-
-    def selectAllPatterns(self):
-        """Select all pattern checkboxes"""
-        for checkbox in self.pattern_checkboxes.values():
-            checkbox.setChecked(True)
-
-    def deselectAllPatterns(self):
-        """Deselect all pattern checkboxes"""
-        for checkbox in self.pattern_checkboxes.values():
-            checkbox.setChecked(False)
-
-    def onPatternTypeChanged(self):
-        """Handle pattern type checkbox changes to sync specific patterns"""
-        # Categorize patterns by type
-        abcd_patterns = ['AB=CD']
-
-        # Get all pattern names and categorize them
-        for pattern_name in self.pattern_checkboxes.keys():
-            # Check if it's an ABCD-type pattern
-            if 'AB' in pattern_name or 'CD' in pattern_name:
-                if pattern_name not in abcd_patterns:
-                    abcd_patterns.append(pattern_name)
-
-        # All other patterns are XABCD patterns
-        xabcd_patterns = [name for name in self.pattern_checkboxes.keys()
-                         if name not in abcd_patterns]
-
-        # Block signals to prevent recursion
-        for checkbox in self.pattern_checkboxes.values():
-            checkbox.blockSignals(True)
-
-        try:
-            # All unstrict checkbox handlers removed
-            pass
-
-        finally:
-            # Re-enable signals
-            for checkbox in self.pattern_checkboxes.values():
-                checkbox.blockSignals(False)
-
-        # Apply filters after syncing
-        self.applyFilters()
-
-    def applyFilters(self):
-        """Apply filters and redraw patterns"""
-        # Filter patterns based on checkboxes
-        self.filtered_patterns = []
-
-        for pattern in self.all_patterns:
-            # Check pattern type
-            ptype = pattern.get('pattern_type', '')
-            # Only keep strict and unstrict patterns
-            if ptype == 'strict_abcd' and not hasattr(self, 'strict_abcd_checkbox'):
-                continue
-            if ptype == 'strict_abcd' and hasattr(self, 'strict_abcd_checkbox') and not self.strict_abcd_checkbox.isChecked():
-                continue
-            if ptype == 'strict_xabcd' and not hasattr(self, 'strict_xabcd_checkbox'):
-                continue
-            if ptype == 'strict_xabcd' and hasattr(self, 'strict_xabcd_checkbox') and not self.strict_xabcd_checkbox.isChecked():
-                continue
-            # Removed all unstrict pattern type checks
-
-            # Check direction
-            pattern_name = pattern.get('name', '').lower()
-            is_bullish = 'bull' in pattern_name
-            is_bearish = 'bear' in pattern_name
-
-            if is_bullish and not self.bull_checkbox.isChecked():
-                continue
-            if is_bearish and not self.bear_checkbox.isChecked():
-                continue
-
-            # Check specific pattern name
-            base_name = pattern.get('name', '')
-            original_name = base_name
-            if '_unformed' in base_name:
-                base_name = base_name.replace('_unformed', '')
-            for suffix in ['_bull', '_bear']:
-                if suffix in base_name:
-                    base_name = base_name.replace(suffix, '')
-
-            # Debug unformed patterns
-            if DEBUG_MODE and 'unformed' in ptype and len(self.filtered_patterns) < 3:
-                print(f"  Checking unformed pattern: original={original_name}, base={base_name}, in checkboxes={base_name in self.pattern_checkboxes}")
-                if base_name in self.pattern_checkboxes:
-                    print(f"    Checkbox {base_name} is checked: {self.pattern_checkboxes[base_name].isChecked()}")
-
-            # For unformed patterns, we don't require specific pattern checkbox
-            # Only check specific pattern names for formed patterns
-            if 'unformed' not in ptype:
-                if base_name in self.pattern_checkboxes:
-                    if not self.pattern_checkboxes[base_name].isChecked():
-                        continue
-
-            self.filtered_patterns.append(pattern)
-
-        # Debug: Show filter results
-        if DEBUG_MODE:
-            formed_count = len([p for p in self.filtered_patterns if p.get('pattern_type', '') in ['abcd', 'xabcd']])
-            unformed_count = len([p for p in self.filtered_patterns if 'unformed' in p.get('pattern_type', '')])
-            print(f"applyFilters: Showing {len(self.filtered_patterns)} patterns (formed: {formed_count}, unformed: {unformed_count})")
-
-        # Update info label
-        self.info_label.setText(f"Displaying {len(self.filtered_patterns)} of {len(self.all_patterns)} patterns")
-
-        # Redraw patterns
-        self.clearPatternLines()
-        self.displayFilteredPatterns()
-
-    def clearPatternLines(self):
-        """Clear all pattern lines and labels from chart"""
-        for line in self.pattern_lines:
-            self.chart.removeItem(line)
-        self.pattern_lines = []
-
-        for label in self.pattern_labels:
-            self.chart.removeItem(label)
-        self.pattern_labels = []
-
-    def setupChart(self):
-        """Setup the chart with candlestick data"""
-        self.chart.setBackground('white')
-        self.chart.setLabel('left', 'Price')
-        self.chart.setLabel('bottom', 'Time')
-        self.chart.showGrid(x=True, y=True)
-
-        # Add candlestick data
-        candlestick_item = CandlestickItem(self.data)
-        self.chart.addItem(candlestick_item)
-
-        # Add extremum points - properly aligned with candlestick indices
-        if self.extremum_points:
-            for point in self.extremum_points:
-                # Handle both tuple and dict formats
-                if isinstance(point, tuple):
-                    # Format: (timestamp, price, is_high)
-                    if len(point) >= 3:
-                        # Find the correct index in the data
-                        try:
-                            timestamp = point[0]
-                            # Convert to same format as data index if needed
-                            if hasattr(timestamp, 'to_pydatetime'):
-                                timestamp = timestamp.to_pydatetime()
-                            # Find the index in the data
-                            idx = self.data.index.get_loc(timestamp, method='nearest')
-
-                            color = 'red' if point[2] else 'green'
-                            scatter = pg.ScatterPlotItem([idx], [point[1]],
-                                                       symbol='o', size=10,
-                                                       brush=pg.mkBrush(color))
-                            self.chart.addItem(scatter)
-                        except:
-                            pass  # Skip if we can't find the index
-                elif isinstance(point, dict):
-                    # Format: {'index': i, 'price': p, 'type': 'High'/'Low'}
-                    color = 'red' if point.get('type') == 'High' else 'green'
-                    scatter = pg.ScatterPlotItem([point.get('index', 0)], [point['price']],
-                                               symbol='o', size=10,
-                                               brush=pg.mkBrush(color))
-                    self.chart.addItem(scatter)
-
-    def displayAllPatterns(self):
-        """Display all patterns on initial load"""
-        self.displayFilteredPatterns()
-
-    def displayFilteredPatterns(self):
-        """Display filtered patterns on the chart with different colors"""
-        # Display ALL patterns - no limits for 100% accuracy
-        patterns_to_display = self.filtered_patterns
-
-        # Update info label to show pattern count
-        self.info_label.setText(f"Displaying {len(self.filtered_patterns)} of {len(self.all_patterns)} patterns")
-
-        # First, add index values to all patterns if missing
-        for pattern in patterns_to_display:
-            if 'points' in pattern and isinstance(pattern['points'], dict):
-                for point_name, point_data in pattern['points'].items():
-                    if isinstance(point_data, dict):
-                        # If we already have an index, skip
-                        if 'index' in point_data and point_data['index'] is not None:
-                            continue
-
-                        # Try to find index from time
-                        if 'time' in point_data:
-                            try:
-                                time_val = point_data['time']
-                                # Convert numpy datetime64 to pandas timestamp if needed
-                                if hasattr(time_val, 'item'):
-                                    time_val = pd.Timestamp(time_val.item())
-                                elif hasattr(time_val, 'to_pydatetime'):
-                                    time_val = time_val.to_pydatetime()
-
-                                # Find the closest index in the data
-                                idx = self.data.index.get_indexer([time_val], method='nearest')[0]
-                                point_data['index'] = idx
-                                print(f"Mapped {point_name} time {time_val} to index {idx}")
-                            except Exception as e:
-                                print(f"Error mapping time to index for {point_name}: {e}")
-                                # Try to use a sequential index based on point name
-                                default_indices = {'X': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'D_projected': 4}
-                                point_data['index'] = default_indices.get(point_name, 0)
-
-        # Define colors for different pattern types
-        colors = {
-            'abcd': {'bull': (0, 255, 0, 150),        # Green
-                     'bear': (0, 200, 0, 150),        # Darker green
-                     'default': (0, 255, 0, 150)},
-            'xabcd': {'bull': (255, 107, 107, 150),   # Red
-                      'bear': (200, 50, 50, 150),     # Darker red
-                      'default': (255, 107, 107, 150)},
-            'unformed': {'bull': (144, 238, 144, 150),  # Light green
-                        'bear': (144, 200, 144, 150),   # Darker light green
-                        'default': (144, 238, 144, 150)},
-            'unformed_xabcd': {'bull': (255, 182, 182, 150),  # Light red
-                              'bear': (200, 150, 150, 150),   # Darker light red
-                              'default': (255, 182, 182, 150)}
-        }
-
-        pattern_count = 0
-        for pattern in patterns_to_display:
-            pattern_type = pattern.get('pattern_type', 'unknown')
-            pattern_name = pattern.get('name', '').lower()
-            is_bullish = 'bull' in pattern_name
-
-            # Determine color
-            if pattern_type in colors:
-                color_set = colors[pattern_type]
-                if is_bullish and 'bull' in color_set:
-                    color = color_set['bull']
-                elif not is_bullish and 'bear' in color_set:
-                    color = color_set['bear']
-                else:
-                    color = color_set['default']
-            else:
-                color = (128, 128, 128, 150)  # Gray for unknown
-
-            # Determine line style
-            if 'unformed' in pattern_type:
-                style = pg.QtCore.Qt.PenStyle.DashLine
-            else:
-                style = pg.QtCore.Qt.PenStyle.SolidLine
-
-            # Draw pattern lines
-            try:
-                if 'points' in pattern and isinstance(pattern['points'], dict):
-                    points = pattern['points']
-                    point_names = ['X', 'A', 'B', 'C', 'D'] if 'X' in points else ['A', 'B', 'C', 'D']
-
-                    # Handle projected D point for unformed patterns
-                    if 'D_projected' in points:
-                        # For unformed patterns, replace D with D_projected
-                        if 'D' in point_names:
-                            point_names = [p if p != 'D' else 'D_projected' for p in point_names]
-                        elif 'D_projected' not in point_names:
-                            point_names.append('D_projected')
-
-                    # Debug: Print first few patterns' points, especially unformed ones
-                    if pattern_count < 3 and 'unformed' in pattern.get('pattern_type', ''):
-                        print(f"\nDEBUG - Pattern #{pattern_count} ({pattern.get('name', 'unknown')}, type={pattern.get('pattern_type', 'unknown')}):")
-                        print(f"  Available points: {list(points.keys())}")
-                        for pn in point_names:
-                            if pn in points:
-                                pt = points[pn]
-                                print(f"  {pn}: index={pt.get('index')}, price={pt.get('price')}, time={pt.get('time')}")
-
-                    # Draw lines between consecutive points
-                    for i in range(len(point_names) - 1):
-                        p1_name = point_names[i]
-                        p2_name = point_names[i + 1]
-
-                        if p1_name in points and p2_name in points:
-                            p1 = points[p1_name]
-                            p2 = points[p2_name]
-
-                            if isinstance(p1, dict) and isinstance(p2, dict):
-                                # Ensure we have valid indices for both points
-                                idx1 = p1.get('index')
-                                idx2 = p2.get('index')
-                                price1 = p1.get('price')
-                                price2 = p2.get('price')
-
-                                if idx1 is not None and idx2 is not None and price1 is not None and price2 is not None:
-                                    # Make sure indices are different for visible lines
-                                    if idx1 != idx2:
-                                        pen = pg.mkPen(color=color, width=3, style=style)
-                                        line = pg.PlotDataItem([idx1, idx2],
-                                                             [price1, price2],
-                                                             pen=pen)
-                                        self.chart.addItem(line)
-                                        self.pattern_lines.append(line)
-                                    else:
-                                        print(f"Warning: Same index {idx1} for {p1_name} and {p2_name}")
-
-                    # Add pattern labels
-                    if 'A' in points and isinstance(points['A'], dict) and 'price' in points['A']:
-                        label_text = f"{pattern.get('name', 'Unknown')}"
-                        label_color = color[:3]  # Remove alpha for text
-                        text_item = pg.TextItem(label_text, color=label_color, anchor=(0, 1))
-                        text_item.setPos(points['A'].get('index', 0), points['A']['price'])
-                        self.chart.addItem(text_item)
-                        self.pattern_labels.append(text_item)
-            except Exception as e:
-                if DEBUG_MODE:
-                    print(f"Error drawing pattern {pattern.get('name', 'unknown')}: {e}")
-
-            pattern_count += 1
 
 
 class PatternViewerWindow(QMainWindow):
@@ -1256,8 +359,8 @@ class PatternViewerWindow(QMainWindow):
                 pattern['pattern_type'] = ptype
                 self.all_patterns.append(pattern)
 
-        # No deduplication needed with exact pattern matching
-        # Each XABCD combination maps to at most one specific pattern name
+        # Remove duplicate patterns that may have been detected by multiple algorithms
+        self.all_patterns = self.deduplicate_patterns(self.all_patterns)
 
         # Initialize filtered patterns (will be updated by filters)
         self.filtered_patterns = self.all_patterns.copy()
@@ -1592,28 +695,18 @@ class PatternViewerWindow(QMainWindow):
     def updatePatternCrosshairLabel(self, x, y):
         """Update crosshair label with current price and date for pattern viewer"""
         try:
-            # Check if display_data is available (set when a pattern is displayed)
-            if not hasattr(self, 'display_data') or self.display_data is None:
-                # Fall back to using full data if display_data not available
-                if self.data is None or len(self.data) == 0:
-                    return
-                data_to_use = self.data
-                index_offset = 0
-            else:
-                # Use the display_data which corresponds to what's shown on the chart
-                data_to_use = self.display_data
-                # No offset needed as display_data is already reset_index(drop=True)
-                index_offset = 0
+            # Get current data
+            if self.data is None or len(self.data) == 0:
+                return
 
             # Convert x position to integer index
             x_int = int(round(x))
 
-            # Ensure x is within the displayed data bounds
-            if 0 <= x_int < len(data_to_use):
+            # Ensure x is within data bounds
+            if 0 <= x_int < len(self.data):
                 # Get date and OHLC data for this index
-                # Note: display_data still has the original time index
-                date = data_to_use.index[x_int]
-                row = data_to_use.iloc[x_int]
+                date = self.data.index[x_int]
+                row = self.data.iloc[x_int]
 
                 # Format date - handle different date types
                 if hasattr(date, 'strftime'):
@@ -1713,7 +806,6 @@ class PatternViewerWindow(QMainWindow):
         self.current_index = index
         pattern = self.filtered_patterns[index]
 
-
         # Update info label
         self.pattern_info.setText(
             f"Pattern {index + 1} of {len(self.filtered_patterns)}: {pattern['name']}"
@@ -1764,23 +856,9 @@ class PatternViewerWindow(QMainWindow):
         # Get the data slice
         display_data = self.data.iloc[display_min:display_max]
 
-        # Store the display data and range for crosshair access
-        self.display_data = display_data
-        self.display_min = display_min
-        self.display_max = display_max
-
         # Create candlestick chart for the relevant range
         candles = CandlestickItem(display_data.reset_index(drop=True))
         self.chart.addItem(candles)
-
-        # Set Y-axis range based on the actual data
-        y_min = display_data['Low'].min() * 0.999  # Add 0.1% padding
-        y_max = display_data['High'].max() * 1.001  # Add 0.1% padding
-        self.chart.setYRange(y_min, y_max, padding=0)
-
-        # Enable auto-range but keep Y fixed to our calculated range
-        self.chart.enableAutoRange(axis='x')
-        self.chart.setAutoVisible(y=True, x=True)
 
         # Plot ALL extremum points in the visible range as reference
         if self.extremum_points:
@@ -1980,15 +1058,7 @@ class PatternViewerWindow(QMainWindow):
         if 'points' in pattern:
             details += "Point Values:\n"
             points = pattern['points']
-            # Determine which points to show based on pattern type
-            if 'xabcd' in pattern.get('type', '').lower() or 'strict_xabcd' in pattern.get('type', ''):
-                # XABCD patterns have all 5 points
-                point_names = ['X', 'A', 'B', 'C', 'D']
-            else:
-                # ABCD patterns only have 4 points
-                point_names = ['A', 'B', 'C', 'D']
-
-            for point_name in point_names:
+            for point_name in ['X', 'A', 'B', 'C', 'D']:
                 if point_name in points and 'price' in points[point_name]:
                     details += f"  {point_name}: {points[point_name]['price']:.2f}\n"
             details += "\n"
@@ -2258,11 +1328,6 @@ class HarmonicPatternDetector(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
 
-        # Make status bar text selectable (must be done after showMessage)
-        status_label = self.status_bar.findChild(QLabel)
-        if status_label:
-            status_label.setTextInteractionFlags(status_label.textInteractionFlags() | 0x00000002)  # TextSelectableByMouse
-
         # Create main splitter for chart and controls
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
@@ -2328,32 +1393,22 @@ class HarmonicPatternDetector(QMainWindow):
         timeframe_layout.addWidget(self.timeframe_combo)
         download_layout.addLayout(timeframe_layout)
 
-        # Download date range with checkbox for all available data
+        # Download date range
         download_date_layout = QVBoxLayout()
-
-        # Add checkbox for downloading all available data
-        self.download_all_checkbox = QCheckBox("Download ALL available data")
-        self.download_all_checkbox.setChecked(True)  # Default to downloading all data
-        self.download_all_checkbox.setStyleSheet("QCheckBox { font-weight: bold; color: #2E7D32; }")
-        self.download_all_checkbox.stateChanged.connect(self.onDownloadAllToggled)
-        download_date_layout.addWidget(self.download_all_checkbox)
-
-        download_date_layout.addWidget(QLabel("Custom Date Range:"))
+        download_date_layout.addWidget(QLabel("Download Range:"))
 
         download_date_range_layout = QHBoxLayout()
         download_date_range_layout.addWidget(QLabel("From:"))
         self.download_start_date = QDateEdit()
         self.download_start_date.setCalendarPopup(True)
-        # Set default to 1 year ago for custom range
+        # Set default to 1 year ago
         self.download_start_date.setDate(QDate.currentDate().addYears(-1))
-        self.download_start_date.setEnabled(False)  # Disabled by default since "Download ALL" is checked
         download_date_range_layout.addWidget(self.download_start_date)
 
         download_date_range_layout.addWidget(QLabel("To:"))
         self.download_end_date = QDateEdit()
         self.download_end_date.setCalendarPopup(True)
         self.download_end_date.setDate(QDate.currentDate())
-        self.download_end_date.setEnabled(False)  # Disabled by default since "Download ALL" is checked
         download_date_range_layout.addWidget(self.download_end_date)
 
         download_date_layout.addLayout(download_date_range_layout)
@@ -2475,45 +1530,24 @@ class HarmonicPatternDetector(QMainWindow):
         pattern_group = QGroupBox("Pattern Detection")
         pattern_layout = QVBoxLayout()
 
-        # Removed basic formed patterns - only keeping strict and unstrict
+        self.abcd_checkbox = QCheckBox("Formed ABCD Patterns")
+        self.abcd_checkbox.setChecked(True)
+        pattern_layout.addWidget(self.abcd_checkbox)
 
-        # Removed unstrict ABCD and XABCD patterns as requested
+        self.xabcd_checkbox = QCheckBox("Formed XABCD Patterns")
+        self.xabcd_checkbox.setChecked(True)
+        pattern_layout.addWidget(self.xabcd_checkbox)
 
-        self.strict_abcd_checkbox = QCheckBox("Formed ABCD")
-        self.strict_abcd_checkbox.setToolTip("Detect ABCD patterns with strict price containment validation")
-        pattern_layout.addWidget(self.strict_abcd_checkbox)
+        self.unformed_checkbox = QCheckBox("Unformed ABCD Patterns")
+        pattern_layout.addWidget(self.unformed_checkbox)
 
-        self.strict_xabcd_checkbox = QCheckBox("Formed XABCD")
-        self.strict_xabcd_checkbox.setToolTip("Detect XABCD patterns with strict price containment validation")
-        pattern_layout.addWidget(self.strict_xabcd_checkbox)
-
-        self.comprehensive_abcd_checkbox = QCheckBox("Unformed ABCD")
-        self.comprehensive_abcd_checkbox.setToolTip("Detect unformed ABCD patterns with strict price containment validation and optimized algorithms")
-        pattern_layout.addWidget(self.comprehensive_abcd_checkbox)
-
-        self.comprehensive_xabcd_checkbox = QCheckBox("Unformed XABCD")
-        self.comprehensive_xabcd_checkbox.setToolTip("Detect unformed XABCD patterns with strict price containment validation and horizontal D lines")
-        pattern_layout.addWidget(self.comprehensive_xabcd_checkbox)
-
-        # Add separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        pattern_layout.addWidget(separator)
-
-        # Removed Show All Patterns checkbox - patterns now open in PatternViewerWindow by default
+        self.unformed_xabcd_checkbox = QCheckBox("Unformed XABCD Patterns")
+        pattern_layout.addWidget(self.unformed_xabcd_checkbox)
 
         self.detect_patterns_btn = QPushButton("Detect Patterns")
         self.detect_patterns_btn.clicked.connect(self.detectPatterns)
         self.detect_patterns_btn.setEnabled(False)
         pattern_layout.addWidget(self.detect_patterns_btn)
-
-        # Add Backtesting button
-        self.backtest_btn = QPushButton("Run Backtesting")
-        self.backtest_btn.clicked.connect(self.openBacktestDialog)
-        self.backtest_btn.setEnabled(False)
-        self.backtest_btn.setToolTip("Run backtesting simulation on detected patterns")
-        pattern_layout.addWidget(self.backtest_btn)
 
         # Progress bar for pattern detection
         self.progress_bar = QProgressBar()
@@ -2642,7 +1676,6 @@ class HarmonicPatternDetector(QMainWindow):
                 # Enable buttons
                 self.clip_btn.setEnabled(True)
                 self.detect_extremums_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)  # Enable backtesting immediately after data loads
 
                 # Auto-clip to date range
                 QTimer.singleShot(200, self.clipData)
@@ -2976,7 +2009,6 @@ class HarmonicPatternDetector(QMainWindow):
                 # Enable buttons
                 self.clip_btn.setEnabled(True)
                 self.detect_extremums_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)  # Enable backtesting after loading data
 
                 # Plot initial data
                 self.plotData()
@@ -2987,36 +2019,18 @@ class HarmonicPatternDetector(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load data: {str(e)}")
 
-    def onDownloadAllToggled(self):
-        """Handle the download all checkbox toggle"""
-        if self.download_all_checkbox.isChecked():
-            # Disable date fields when downloading all data
-            self.download_start_date.setEnabled(False)
-            self.download_end_date.setEnabled(False)
-        else:
-            # Enable date fields for custom range
-            self.download_start_date.setEnabled(True)
-            self.download_end_date.setEnabled(True)
-
     def downloadBinanceData(self):
         """Download data from Binance API"""
         try:
             # Get parameters
             symbol = self.symbol_combo.currentText().strip().upper()
             timeframe = self.timeframe_combo.currentText()
+            start_date = self.download_start_date.date().toPyDate()
+            end_date = self.download_end_date.date().toPyDate()
 
-            # Check if downloading all available data
-            if self.download_all_checkbox.isChecked():
-                # Use earliest possible date (Binance launch) to current date
-                start_date = datetime(2017, 7, 1)  # Binance launch date
-                end_date = datetime.now()
-            else:
-                # Use custom date range
-                start_date = self.download_start_date.date().toPyDate()
-                end_date = self.download_end_date.date().toPyDate()
-                # Convert to datetime
-                start_date = datetime.combine(start_date, datetime.min.time())
-                end_date = datetime.combine(end_date, datetime.max.time())
+            # Convert to datetime
+            start_date = datetime.combine(start_date, datetime.min.time())
+            end_date = datetime.combine(end_date, datetime.max.time())
 
             # Validate dates
             if start_date >= end_date:
@@ -3072,7 +2086,6 @@ class HarmonicPatternDetector(QMainWindow):
             # Enable controls
             self.clip_btn.setEnabled(True)
             self.detect_extremums_btn.setEnabled(True)
-            self.backtest_btn.setEnabled(True)  # Enable backtesting after downloading data
 
             # Clear existing patterns and extremums
             self.extremum_points = []
@@ -3197,36 +2210,24 @@ class HarmonicPatternDetector(QMainWindow):
                 lows[i] <= lows[i-1] and lows[i] <= lows[i+1]
             )
 
-            # Add BOTH high and low pivots if they exist
-            # This ensures we capture ALL extremum points (not just alternating ones)
+            # Add pivot points (prioritize high pivots in case of both)
             if is_high_pivot:
                 self.extremum_points.append((timestamps[i], highs[i], True))
-
-            # Use separate if (not elif) to capture both high and low on same candle
-            if is_low_pivot:
+            elif is_low_pivot:
                 self.extremum_points.append((timestamps[i], lows[i], False))
 
         # Sort by date
         self.extremum_points.sort(key=lambda x: x[0])
 
-        # Count highs and lows separately for detailed reporting
-        high_count = sum(1 for _, _, is_high in self.extremum_points if is_high)
-        low_count = len(self.extremum_points) - high_count
+        # No cleanup - keep all extremums including consecutive highs/lows
 
-        # Log detailed counts
-        print(f"Extremum detection complete:")
-        print(f"  - High points: {high_count}")
-        print(f"  - Low points: {low_count}")
-        print(f"  - Total: {len(self.extremum_points)} points (ALL highs and lows)")
-
-        self.status_bar.showMessage(f"Found {len(self.extremum_points)} extremum points ({high_count} highs, {low_count} lows)")
+        self.status_bar.showMessage(f"Found {len(self.extremum_points)} extremum points")
 
         # Plot extremums
         self.plotExtremums()
 
         # Enable pattern detection
         self.detect_patterns_btn.setEnabled(True)
-        self.backtest_btn.setEnabled(True)
 
         # Update statistics
         self.updateStatistics()
@@ -3475,10 +2476,6 @@ class HarmonicPatternDetector(QMainWindow):
         """Detect harmonic patterns"""
         if DEBUG_MODE: print("detectPatterns called")
 
-        # Show immediate feedback
-        self.status_bar.showMessage("Starting pattern detection...")
-        QApplication.processEvents()  # Force UI update
-
         if not self.extremum_points:
             QMessageBox.warning(self, "Warning", "Please detect extremums first")
             return
@@ -3491,20 +2488,14 @@ class HarmonicPatternDetector(QMainWindow):
 
         # Get selected pattern types
         pattern_types = []
-        # Strict and comprehensive patterns (removed only unstrict patterns)
-        if hasattr(self, 'strict_abcd_checkbox') and self.strict_abcd_checkbox.isChecked():
-            pattern_types.append('strict_abcd')
-        if hasattr(self, 'strict_xabcd_checkbox') and self.strict_xabcd_checkbox.isChecked():
-            pattern_types.append('strict_xabcd')
-        if hasattr(self, 'comprehensive_abcd_checkbox') and self.comprehensive_abcd_checkbox.isChecked():
-            pattern_types.append('comprehensive_abcd')
-        if hasattr(self, 'comprehensive_xabcd_checkbox') and self.comprehensive_xabcd_checkbox.isChecked():
-            pattern_types.append('comprehensive_xabcd')
-
-        # If no individual patterns are selected, automatically enable all pattern types
-        if not pattern_types:
-            pattern_types = ['strict_abcd', 'strict_xabcd', 'comprehensive_abcd', 'comprehensive_xabcd']
-            if DEBUG_MODE: print("No patterns selected - detecting all pattern types")
+        if self.abcd_checkbox.isChecked():
+            pattern_types.append('abcd')
+        if self.xabcd_checkbox.isChecked():
+            pattern_types.append('xabcd')
+        if self.unformed_checkbox.isChecked():
+            pattern_types.append('unformed')
+        if self.unformed_xabcd_checkbox.isChecked():
+            pattern_types.append('unformed_xabcd')
 
         if DEBUG_MODE: print(f"Selected pattern types: {pattern_types}")
 
@@ -3521,15 +2512,13 @@ class HarmonicPatternDetector(QMainWindow):
         if DEBUG_MODE: print("Creating pattern worker thread...")
         # Pass the data (filtered or original) to the worker
         data_to_use = self.filtered_data if self.filtered_data is not None else self.data
-        self.pattern_worker = PatternDetectionWorker(self.extremum_points, pattern_types, data_to_use, self)
+        self.pattern_worker = PatternDetectionWorker(self.extremum_points, pattern_types, data_to_use)
         self.pattern_worker.progress.connect(self.progress_bar.setValue)
         self.pattern_worker.status.connect(self.status_bar.showMessage)
         self.pattern_worker.finished.connect(self.onPatternsDetected)
 
-        # Disable button during detection and change text
+        # Disable button during detection
         self.detect_patterns_btn.setEnabled(False)
-        self.detect_patterns_btn.setText("Detecting... Please Wait")
-        self.progress_bar.setVisible(True)  # Make sure progress bar is visible
         if DEBUG_MODE: print("Starting pattern worker thread...")
         self.pattern_worker.start()
 
@@ -3537,8 +2526,6 @@ class HarmonicPatternDetector(QMainWindow):
         """Handle detected patterns"""
         self.detected_patterns = patterns
         self.detect_patterns_btn.setEnabled(True)
-        self.backtest_btn.setEnabled(True)
-        self.detect_patterns_btn.setText("Detect Patterns")  # Restore original text
         self.progress_bar.setValue(0)
 
         # Clean up the worker thread
@@ -3557,7 +2544,6 @@ class HarmonicPatternDetector(QMainWindow):
                 pattern_counts.append(f"{ptype.upper()}: {len(plist)} patterns")
 
         if total_patterns > 0:
-            # Always open pattern viewer window (removed show all patterns option)
             QMessageBox.information(
                 self,
                 "Pattern Detection Complete",
@@ -3565,6 +2551,7 @@ class HarmonicPatternDetector(QMainWindow):
                 "\n\nOpening Pattern Viewer window..."
             )
 
+            # Open pattern viewer window
             data_to_use = self.filtered_data if self.filtered_data is not None else self.data
             self.pattern_window = PatternViewerWindow(
                 self,
@@ -3583,160 +2570,6 @@ class HarmonicPatternDetector(QMainWindow):
 
         self.updateStatistics()
 
-    def displayAllPatternsOnMainChart(self, patterns):
-        """Display all detected patterns on the main chart"""
-        # Clear any existing pattern lines
-        if hasattr(self, 'pattern_lines'):
-            for line in self.pattern_lines:
-                self.main_chart.removeItem(line)
-        self.pattern_lines = []
-
-        # Flatten all patterns into a single list
-        all_patterns = []
-        for ptype, plist in patterns.items():
-            for pattern in plist:
-                pattern['pattern_type'] = ptype
-                all_patterns.append(pattern)
-
-        # Define colors for different pattern types
-        colors = {
-            'abcd': {'formed': (0, 255, 0, 100),      # Green with transparency
-                     'bull': (0, 255, 0, 100),
-                     'bear': (0, 200, 0, 100)},        # Darker green
-            'xabcd': {'formed': (255, 107, 107, 100), # Red with transparency
-                      'bull': (255, 107, 107, 100),
-                      'bear': (200, 50, 50, 100)},     # Darker red
-            'unformed': {'bull': (144, 238, 144, 100),  # Light green
-                        'bear': (144, 200, 144, 100)},   # Darker light green
-            'unformed_xabcd': {'bull': (255, 182, 182, 100),  # Light red
-                              'bear': (200, 150, 150, 100)}    # Darker light red
-        }
-
-        # Draw each pattern on the main chart
-        pattern_count = 0
-        for pattern in all_patterns:
-            pattern_type = pattern.get('pattern_type', 'unknown')
-            is_bullish = 'bull' in pattern.get('name', '').lower()
-
-            # Determine color
-            if pattern_type in colors:
-                if is_bullish and 'bull' in colors[pattern_type]:
-                    color = colors[pattern_type]['bull']
-                elif not is_bullish and 'bear' in colors[pattern_type]:
-                    color = colors[pattern_type]['bear']
-                else:
-                    color = colors[pattern_type].get('formed', (128, 128, 128, 100))
-            else:
-                color = (128, 128, 128, 100)  # Gray for unknown
-
-            # Determine line style
-            if 'unformed' in pattern_type:
-                style = pg.QtCore.Qt.PenStyle.DashLine
-            else:
-                style = pg.QtCore.Qt.PenStyle.SolidLine
-
-            # Draw pattern lines
-            if 'points' in pattern:
-                points = pattern['points']
-                point_names = ['X', 'A', 'B', 'C', 'D'] if 'X' in points else ['A', 'B', 'C', 'D']
-
-                # Handle projected D point
-                if 'D_projected' in points:
-                    point_names = [p for p in point_names if p != 'D']
-                    point_names.append('D_projected')
-
-                # Draw lines between consecutive points
-                for i in range(len(point_names) - 1):
-                    p1_name = point_names[i]
-                    p2_name = point_names[i + 1]
-
-                    if p1_name in points and p2_name in points:
-                        p1 = points[p1_name]
-                        p2 = points[p2_name]
-
-                        if 'index' in p1 and 'price' in p1 and 'index' in p2 and 'price' in p2:
-                            pen = pg.mkPen(color=color, width=1.5, style=style)
-                            line = pg.PlotDataItem([p1['index'], p2['index']],
-                                                 [p1['price'], p2['price']],
-                                                 pen=pen)
-                            self.main_chart.addItem(line)
-                            self.pattern_lines.append(line)
-
-            pattern_count += 1
-
-        # Update status bar
-        self.status_bar.showMessage(f"Displaying {pattern_count} patterns on main chart")
-
-        # Show legend info in statistics
-        legend_text = f"Pattern Overlay - {pattern_count} patterns displayed\n"
-        legend_text += "=" * 40 + "\n"
-        legend_text += "Color Legend:\n"
-        legend_text += "  Green: Formed ABCD (Bulls lighter)\n"
-        legend_text += "  Red: Formed XABCD (Bulls lighter)\n"
-        legend_text += "  Light Green: Unformed ABCD\n"
-        legend_text += "  Light Red: Unformed XABCD\n"
-        legend_text += "  Solid lines: Formed patterns\n"
-        legend_text += "  Dashed lines: Unformed patterns\n"
-
-        current_stats = self.stats_text.toPlainText()
-        self.stats_text.setText(current_stats + "\n\n" + legend_text)
-
-    def showAllPatternsWindow(self, patterns):
-        """Create and show a new window displaying all patterns"""
-        try:
-            print("=== showAllPatternsWindow called ===")
-            print(f"Creating AllPatternsWindow...")
-
-            # Debug: Check the structure of patterns
-            print(f"Pattern keys: {patterns.keys()}")
-            for ptype, plist in patterns.items():
-                print(f"  {ptype}: {type(plist)}, length: {len(plist) if isinstance(plist, list) else 'not a list'}")
-                if isinstance(plist, list) and len(plist) > 0:
-                    print(f"    First item type: {type(plist[0])}")
-                    if not isinstance(plist[0], dict):
-                        print(f"    WARNING: First item is not a dict: {plist[0]}")
-
-            # Count total patterns
-            total_patterns = sum(len(plist) if isinstance(plist, list) else 0 for plist in patterns.values())
-            print(f"Total patterns to display: {total_patterns}")
-
-            # Create all patterns window with original patterns dictionary
-            data_to_use = self.filtered_data if self.filtered_data is not None else self.data
-            print(f"Data shape: {data_to_use.shape}")
-            print(f"Extremum points count: {len(self.extremum_points)}")
-
-            # Use improved window if available, otherwise fallback to original
-            print(f"IMPROVED_DISPLAY_AVAILABLE = {IMPROVED_DISPLAY_AVAILABLE}")
-            if IMPROVED_DISPLAY_AVAILABLE:
-                print("Using ImprovedAllPatternsWindow...")
-                print("About to create ImprovedAllPatternsWindow...")
-                self.all_patterns_window = ImprovedAllPatternsWindow(
-                    self,
-                    data_to_use,
-                    patterns,  # Pass original patterns dictionary
-                    self.extremum_points
-                )
-                print("ImprovedAllPatternsWindow created successfully")
-            else:
-                print("Using original AllPatternsWindow...")
-                self.all_patterns_window = AllPatternsWindow(
-                    self,
-                    data_to_use,
-                    patterns,  # Pass original patterns dictionary
-                    self.extremum_points
-                )
-
-            print("Showing AllPatternsWindow...")
-            self.all_patterns_window.show()
-            print("AllPatternsWindow should be visible now")
-
-        except Exception as e:
-            import traceback
-            print(f"ERROR in showAllPatternsWindow: {e}")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error args: {e.args}")
-            print(f"Full traceback:\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "Error", f"Failed to create All Patterns window:\n{str(e)}")
 
     # Dead code removed - pattern display is handled by PatternViewerWindow
 
@@ -3793,7 +2626,6 @@ class HarmonicPatternDetector(QMainWindow):
 
                 self.plotExtremums()
                 self.detect_patterns_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)
                 self.status_bar.showMessage(f"Loaded {len(self.extremum_points)} extremums")
                 self.updateStatistics()
 
@@ -3859,6 +2691,7 @@ class HarmonicPatternDetector(QMainWindow):
     def resetView(self):
         """Reset chart view"""
         self.main_chart.autoRange()
+        self.pattern_chart.autoRange()
 
     def showAbout(self):
         """Show about dialog"""
@@ -3869,62 +2702,6 @@ class HarmonicPatternDetector(QMainWindow):
             "Built with PyQt6 and PyQtGraph\n"
             "High-performance financial pattern analysis"
         )
-
-    def openBacktestDialog(self):
-        """Open the backtesting dialog window"""
-        from PyQt6.QtWidgets import QMessageBox
-
-        # Get current settings
-        current_extremum = self.length_spinbox.value()
-        start_date = self.start_date_edit.date()
-        end_date = self.end_date_edit.date()
-
-        # Create informative message
-        msg = QMessageBox()
-        msg.setWindowTitle("Backtesting Configuration")
-        msg.setText("<b>Before proceeding with backtesting:</b>")
-
-        info_text = (
-            f"<p>Your current GUI settings will be used:</p>"
-            f"<ul>"
-            f"<li><b>Extremum Length:</b> {current_extremum}</li>"
-            f"<li><b>Date Range:</b> {start_date.toString('yyyy-MM-dd')} to {end_date.toString('yyyy-MM-dd')}</li>"
-            f"</ul>"
-            f"<p>The backtesting will inherit these settings for consistency.</p>"
-            f"<p><b>Recommendations:</b><br>"
-            f"• Use <b>Extremum Length = 1</b> for maximum pattern detection<br>"
-            f"• Select a specific <b>date range</b> for reproducible results<br>"
-            f"• Smaller date ranges (50-200 bars) allow complete pattern analysis</p>"
-            f"<p>Do you want to continue with these settings?</p>"
-        )
-        msg.setInformativeText(info_text)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
-
-        # Style the message box
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #f9f9f9;
-            }
-            QMessageBox QLabel {
-                color: #333333;
-                font-size: 12px;
-            }
-        """)
-
-        # Show message and get response
-        response = msg.exec()
-
-        if response == QMessageBox.StandardButton.Yes:
-            # Proceed with opening the dialog
-            if not hasattr(self, 'backtesting_dialog'):
-                self.backtesting_dialog = BacktestingDialog(self, self.data)
-            else:
-                # Update data if it has changed
-                self.backtesting_dialog.data = self.data
-            self.backtesting_dialog.show()
-        # If No, user can adjust settings before trying again
 
     def updateStatistics(self):
         """Update statistics display"""

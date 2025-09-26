@@ -3872,59 +3872,12 @@ class HarmonicPatternDetector(QMainWindow):
 
     def openBacktestDialog(self):
         """Open the backtesting dialog window"""
-        from PyQt6.QtWidgets import QMessageBox
-
-        # Get current settings
-        current_extremum = self.length_spinbox.value()
-        start_date = self.start_date_edit.date()
-        end_date = self.end_date_edit.date()
-
-        # Create informative message
-        msg = QMessageBox()
-        msg.setWindowTitle("Backtesting Configuration")
-        msg.setText("<b>Before proceeding with backtesting:</b>")
-
-        info_text = (
-            f"<p>Your current GUI settings will be used:</p>"
-            f"<ul>"
-            f"<li><b>Extremum Length:</b> {current_extremum}</li>"
-            f"<li><b>Date Range:</b> {start_date.toString('yyyy-MM-dd')} to {end_date.toString('yyyy-MM-dd')}</li>"
-            f"</ul>"
-            f"<p>The backtesting will inherit these settings for consistency.</p>"
-            f"<p><b>Recommendations:</b><br>"
-            f"• Use <b>Extremum Length = 1</b> for maximum pattern detection<br>"
-            f"• Select a specific <b>date range</b> for reproducible results<br>"
-            f"• Smaller date ranges (50-200 bars) allow complete pattern analysis</p>"
-            f"<p>Do you want to continue with these settings?</p>"
-        )
-        msg.setInformativeText(info_text)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
-
-        # Style the message box
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #f9f9f9;
-            }
-            QMessageBox QLabel {
-                color: #333333;
-                font-size: 12px;
-            }
-        """)
-
-        # Show message and get response
-        response = msg.exec()
-
-        if response == QMessageBox.StandardButton.Yes:
-            # Proceed with opening the dialog
-            if not hasattr(self, 'backtesting_dialog'):
-                self.backtesting_dialog = BacktestingDialog(self, self.data)
-            else:
-                # Update data if it has changed
-                self.backtesting_dialog.data = self.data
-            self.backtesting_dialog.show()
-        # If No, user can adjust settings before trying again
+        if not hasattr(self, 'backtesting_dialog'):
+            self.backtesting_dialog = BacktestingDialog(self, self.data)
+        else:
+            # Update data if it has changed
+            self.backtesting_dialog.data = self.data
+        self.backtesting_dialog.show()
 
     def updateStatistics(self):
         """Update statistics display"""

@@ -5,7 +5,7 @@ Combines both formed and unformed ABCD patterns with strict validation
 This module provides:
 1. Formed ABCD patterns (complete 4-point patterns with strict price containment)
 2. Unformed ABCD patterns (3-point patterns with projected D points)
-3. Optimized performance with O(n?) complexity
+3. Optimized performance with O(n²) complexity
 4. Strict price validation to ensure clean pattern formation
 5. PRZ (Potential Reversal Zone) calculation for unformed patterns
 """
@@ -15,7 +15,6 @@ import pandas as pd
 import numpy as np
 import threading
 from pattern_ratios_2_Final import ABCD_PATTERN_RATIOS
-from pattern_data_standard import StandardPattern, PatternPoint, standardize_pattern_name, fix_unicode_issues
 
 # Configuration constants
 EPSILON = 1e-10
@@ -96,9 +95,9 @@ def validate_price_containment_bullish(df: pd.DataFrame,
     Bullish: A(High) -> B(Low) -> C(High) -> D(Low)
 
     Rules:
-    1. A->B: No candle between A and B has a high that exceeds A
-    2. B->C: No candle between A and C has a low that breaks B
-    3. C->D (if D exists): No candle between B and D has a high that exceeds C
+    1. A→B: No candle between A and B has a high that exceeds A
+    2. B→C: No candle between A and C has a low that breaks B
+    3. C→D (if D exists): No candle between B and D has a high that exceeds C
     """
     try:
         high_col = 'High' if 'High' in df.columns else 'high'
@@ -165,9 +164,9 @@ def validate_price_containment_bearish(df: pd.DataFrame,
     Bearish: A(Low) -> B(High) -> C(Low) -> D(High)
 
     Rules:
-    1. A->B: No candle between A and B has a low that breaks A
-    2. B->C: No candle between A and C has a high that exceeds B
-    3. C->D (if D exists): No candle between B and D has a low that breaks C
+    1. A→B: No candle between A and B has a low that breaks A
+    2. B→C: No candle between A and C has a high that exceeds B
+    3. C→D (if D exists): No candle between B and D has a low that breaks C
     """
     try:
         high_col = 'High' if 'High' in df.columns else 'high'
@@ -223,20 +222,7 @@ def validate_price_containment_bearish(df: pd.DataFrame,
 
 
 def find_candle_index(df: pd.DataFrame, timestamp, time_tolerance=pd.Timedelta(minutes=1)):
-    """Helper function to find candle index in DataFrame
-
-    Can handle both integer indices and timestamps.
-    If timestamp is already an integer index, returns it directly.
-    Otherwise, converts timestamp to index.
-    """
-    # If timestamp is already an integer index, return it directly
-    if isinstance(timestamp, (int, np.integer)):
-        # Validate it's within bounds
-        if 0 <= timestamp < len(df):
-            return timestamp
-        return None
-
-    # Otherwise, handle as timestamp
+    """Helper function to find candle index in DataFrame"""
     if 'timestamp' not in df.columns:
         df_copy = df.copy()
         if isinstance(df.index, pd.DatetimeIndex):
@@ -250,12 +236,9 @@ def find_candle_index(df: pd.DataFrame, timestamp, time_tolerance=pd.Timedelta(m
     else:
         df_copy = df
 
-    try:
-        time_diff = abs(df_copy['timestamp'] - pd.to_datetime(timestamp))
-        if time_diff.min() <= time_tolerance:
-            return time_diff.idxmin()
-    except:
-        return None
+    time_diff = abs(df_copy['timestamp'] - pd.to_datetime(timestamp))
+    if time_diff.min() <= time_tolerance:
+        return time_diff.idxmin()
     return None
 
 
@@ -441,37 +424,28 @@ def detect_strict_abcd_patterns(extremum_points: List[Tuple],
                             patterns_rejected += 1
                             continue
 
-                        # Create standardized pattern object
-                        direction = 'bullish' if is_bullish else 'bearish'
-                        pattern_name_std = standardize_pattern_name(pattern_name, 'formed', direction)
-                        pattern_name_std = fix_unicode_issues(pattern_name_std)
-
-                        # Create pattern points with proper indices
-                        a_point = PatternPoint(timestamp=a_time, price=a_price, index=a_idx)
-                        b_point = PatternPoint(timestamp=b_time, price=b_price, index=b_idx)
-                        c_point = PatternPoint(timestamp=c_time, price=c_price, index=c_idx)
-                        d_point = PatternPoint(timestamp=d_time, price=d_price, index=d_idx)
-
-                        # Create standardized pattern
-                        standard_pattern = StandardPattern(
-                            name=pattern_name_std,
-                            pattern_type='ABCD',
-                            formation_status='formed',
-                            direction=direction,
-                            x_point=None,  # ABCD patterns don't have X point
-                            a_point=a_point,
-                            b_point=b_point,
-                            c_point=c_point,
-                            d_point=d_point,
-                            ratios={
+                        # Pattern is valid!
+                        pattern = {
+                            'name': f"{pattern_name}_strict",
+                            'type': 'bullish' if is_bullish else 'bearish',
+                            'points': {
+                                'A': {'time': a_time, 'price': a_price},
+                                'B': {'time': b_time, 'price': b_price},
+                                'C': {'time': c_time, 'price': c_price},
+                                'D': {'time': d_time, 'price': d_price}
+                            },
+                            'ratios': {
                                 'bc_retracement': bc_retracement,
                                 'cd_projection': cd_projection
                             },
-                            validation_type='strict_containment'
-                        )
-
-                        # Convert to legacy dict format for backward compatibility
-                        pattern = standard_pattern.to_legacy_dict()
+                            'indices': {
+                                'A': a_idx,
+                                'B': b_idx,
+                                'C': c_idx,
+                                'D': d_idx
+                            },
+                            'validation': 'strict_containment'
+                        }
 
                         patterns.append(pattern)
                         patterns_found += 1
@@ -516,9 +490,19 @@ def detect_unformed_abcd_patterns_optimized(extremum_points: List[Tuple],
     patterns = []
     processed_combinations = set()
 
-    # NO LIMITS - Always search entire dataset for 100% certainty
-    search_window_j = n  # Check ALL possible j points
-    search_window_k = n  # Check ALL possible k points
+    # Adaptive search window sizing
+    if max_search_window is None:
+        if n < 10:
+            search_window_j = n
+            search_window_k = n
+        elif n < 50:
+            search_window_j = min(30, n)
+            search_window_k = min(20, n)
+        else:
+            search_window_j = min(50, n)
+            search_window_k = min(30, n)
+    else:
+        search_window_j = search_window_k = max_search_window
 
     # Prepare DataFrame for validation if needed
     df_copy = None
@@ -539,15 +523,18 @@ def detect_unformed_abcd_patterns_optimized(extremum_points: List[Tuple],
     patterns_checked = 0
     patterns_rejected = 0
 
-    # Process ALL points - NO LIMITS
+    # Process points in reverse chronological order
     for i in range(n - 3, -1, -1):
-        # NO pattern limit check - process everything
+        if max_patterns and len(patterns) >= max_patterns:
+            break
 
-        for j in range(i + 1, n - 1):  # Check ALL j points
-            # NO pattern limit check - process everything
+        for j in range(i + 1, min(i + search_window_j, n - 1)):
+            if max_patterns and len(patterns) >= max_patterns:
+                break
 
-            for k in range(j + 1, n):  # Check ALL k points
-                # NO pattern limit check - process everything
+            for k in range(j + 1, min(j + search_window_k, n)):
+                if max_patterns and len(patterns) >= max_patterns:
+                    break
 
                 A, B, C = extremum_points[i], extremum_points[j], extremum_points[k]
 
@@ -619,22 +606,11 @@ def detect_unformed_abcd_patterns_optimized(extremum_points: List[Tuple],
     return patterns[:max_patterns] if max_patterns else patterns
 
 
-def detect_unformed_abcd_patterns(extremum_points: List[Tuple],
-                                 df: Optional[pd.DataFrame] = None,
-                                 log_details: bool = False,
-                                 backtest_mode: bool = False) -> List[Dict]:
+def detect_unformed_abcd_patterns(extremum_points: List[Tuple], log_details: bool = False) -> List[Dict]:
     """
-    Detect ALL unformed ABCD patterns - NO LIMITS, 100% CERTAINTY
+    Drop-in replacement for original unformed pattern detection.
     """
-    # ALWAYS detect ALL patterns - NO LIMITS, NO COMPROMISES
-    return detect_unformed_abcd_patterns_optimized(
-        extremum_points,
-        df=df,  # Pass the DataFrame for validation
-        log_details=log_details,
-        max_patterns=None,  # NO LIMIT - detect ALL patterns
-        max_search_window=None,  # NO LIMIT - search entire history
-        strict_validation=True  # ENABLE strict price containment validation
-    )
+    return detect_unformed_abcd_patterns_optimized(extremum_points, log_details=log_details)
 
 
 def _is_valid_abc_pattern(A: Tuple, B: Tuple, C: Tuple) -> bool:
@@ -719,11 +695,7 @@ def _process_abc_combination_optimized(A: Tuple, B: Tuple, C: Tuple, signature: 
             'matching_patterns': matching_pattern_names,
             'prz_zones': comprehensive_prz_zones
         },
-        'indices': {
-            'A': signature[0],
-            'B': signature[1],
-            'C': signature[2]
-        },
+        'indices': list(signature),
         'quality_score': len(matching_pattern_names),
         'validation': validation_type
     }

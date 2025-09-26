@@ -208,7 +208,7 @@ def detect_strict_xabcd_patterns(
     df: pd.DataFrame,
     log_details: bool = False,
     max_patterns: Optional[int] = None,
-    max_window: int = None  # Maximum distance between X and D (None = no limit)
+    max_window: int = 100  # Maximum distance between X and D
 ) -> List[Dict]:
     """
     Ultra-efficient strict XABCD pattern detection using sliding window approach.
@@ -267,11 +267,11 @@ def detect_strict_xabcd_patterns(
             if max_patterns and len(patterns) >= max_patterns:
                 return
 
-            # Find valid A points (must be after X, within window if limit exists)
+            # Find valid A points (must be after X, within window)
             a_candidates = [
                 (a_idx, a_time, a_price)
                 for a_idx, a_time, a_price in a_points
-                if a_idx > x_idx and (max_window is None or a_idx - x_idx <= max_window)
+                if a_idx > x_idx and a_idx - x_idx <= max_window
             ]
 
             for a_idx, a_time, a_price in a_candidates:
@@ -296,7 +296,7 @@ def detect_strict_xabcd_patterns(
                 b_candidates = [
                     (b_idx, b_time, b_price)
                     for b_idx, b_time, b_price in b_points
-                    if b_idx > a_idx and (max_window is None or b_idx - x_idx <= max_window)
+                    if b_idx > a_idx and b_idx - x_idx <= max_window
                 ]
 
                 for b_idx, b_time, b_price in b_candidates:
@@ -320,7 +320,7 @@ def detect_strict_xabcd_patterns(
                     c_candidates = [
                         (c_idx, c_time, c_price)
                         for c_idx, c_time, c_price in c_points
-                        if c_idx > b_idx and (max_window is None or c_idx - x_idx <= max_window)
+                        if c_idx > b_idx and c_idx - x_idx <= max_window
                     ]
 
                     for c_idx, c_time, c_price in c_candidates:
@@ -344,7 +344,7 @@ def detect_strict_xabcd_patterns(
                         d_candidates = [
                             (d_idx, d_time, d_price)
                             for d_idx, d_time, d_price in d_points
-                            if d_idx > c_idx and (max_window is None or d_idx - x_idx <= max_window)
+                            if d_idx > c_idx and d_idx - x_idx <= max_window
                         ]
 
                         for d_idx, d_time, d_price in d_candidates:

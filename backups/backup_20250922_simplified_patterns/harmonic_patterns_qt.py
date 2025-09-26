@@ -91,7 +91,6 @@ print("Comprehensive ABCD pattern detection loaded")
 
 # Import comprehensive XABCD pattern detection
 from comprehensive_xabcd_patterns import detect_strict_unformed_xabcd_patterns as detect_comprehensive_unformed_xabcd
-from backtesting_dialog import BacktestingDialog
 print("Comprehensive XABCD pattern detection loaded")
 
 # Import Binance data downloader
@@ -344,7 +343,7 @@ class PatternDetectionWorker(QThread):
             self.extremum_points,
             self.data,
             log_details=False,  # Disable detailed logging for speed
-            max_patterns=None,   # No limit - detect ALL patterns
+            max_patterns=100,    # Increased limit to 100
         )
 
     def detect_strict_xabcd_patterns(self):
@@ -1098,11 +1097,17 @@ class AllPatternsWindow(QMainWindow):
 
     def displayFilteredPatterns(self):
         """Display filtered patterns on the chart with different colors"""
-        # Display ALL patterns - no limits for 100% accuracy
-        patterns_to_display = self.filtered_patterns
+        # Limit display to prevent freezing
+        MAX_PATTERNS_TO_DISPLAY = 50
 
-        # Update info label to show pattern count
-        self.info_label.setText(f"Displaying {len(self.filtered_patterns)} of {len(self.all_patterns)} patterns")
+        # Use only the first MAX_PATTERNS_TO_DISPLAY patterns
+        patterns_to_display = self.filtered_patterns[:MAX_PATTERNS_TO_DISPLAY]
+
+        # Update info label to show if we're limiting
+        if len(self.filtered_patterns) > MAX_PATTERNS_TO_DISPLAY:
+            self.info_label.setText(f"Displaying {MAX_PATTERNS_TO_DISPLAY} of {len(self.filtered_patterns)} patterns (limited for performance)")
+        else:
+            self.info_label.setText(f"Displaying {len(self.filtered_patterns)} of {len(self.all_patterns)} patterns")
 
         # First, add index values to all patterns if missing
         for pattern in patterns_to_display:
@@ -2508,13 +2513,6 @@ class HarmonicPatternDetector(QMainWindow):
         self.detect_patterns_btn.setEnabled(False)
         pattern_layout.addWidget(self.detect_patterns_btn)
 
-        # Add Backtesting button
-        self.backtest_btn = QPushButton("Run Backtesting")
-        self.backtest_btn.clicked.connect(self.openBacktestDialog)
-        self.backtest_btn.setEnabled(False)
-        self.backtest_btn.setToolTip("Run backtesting simulation on detected patterns")
-        pattern_layout.addWidget(self.backtest_btn)
-
         # Progress bar for pattern detection
         self.progress_bar = QProgressBar()
         pattern_layout.addWidget(self.progress_bar)
@@ -2642,7 +2640,6 @@ class HarmonicPatternDetector(QMainWindow):
                 # Enable buttons
                 self.clip_btn.setEnabled(True)
                 self.detect_extremums_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)  # Enable backtesting immediately after data loads
 
                 # Auto-clip to date range
                 QTimer.singleShot(200, self.clipData)
@@ -2976,7 +2973,6 @@ class HarmonicPatternDetector(QMainWindow):
                 # Enable buttons
                 self.clip_btn.setEnabled(True)
                 self.detect_extremums_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)  # Enable backtesting after loading data
 
                 # Plot initial data
                 self.plotData()
@@ -3072,7 +3068,6 @@ class HarmonicPatternDetector(QMainWindow):
             # Enable controls
             self.clip_btn.setEnabled(True)
             self.detect_extremums_btn.setEnabled(True)
-            self.backtest_btn.setEnabled(True)  # Enable backtesting after downloading data
 
             # Clear existing patterns and extremums
             self.extremum_points = []
@@ -3226,7 +3221,6 @@ class HarmonicPatternDetector(QMainWindow):
 
         # Enable pattern detection
         self.detect_patterns_btn.setEnabled(True)
-        self.backtest_btn.setEnabled(True)
 
         # Update statistics
         self.updateStatistics()
@@ -3537,7 +3531,6 @@ class HarmonicPatternDetector(QMainWindow):
         """Handle detected patterns"""
         self.detected_patterns = patterns
         self.detect_patterns_btn.setEnabled(True)
-        self.backtest_btn.setEnabled(True)
         self.detect_patterns_btn.setText("Detect Patterns")  # Restore original text
         self.progress_bar.setValue(0)
 
@@ -3793,7 +3786,6 @@ class HarmonicPatternDetector(QMainWindow):
 
                 self.plotExtremums()
                 self.detect_patterns_btn.setEnabled(True)
-                self.backtest_btn.setEnabled(True)
                 self.status_bar.showMessage(f"Loaded {len(self.extremum_points)} extremums")
                 self.updateStatistics()
 
@@ -3869,62 +3861,6 @@ class HarmonicPatternDetector(QMainWindow):
             "Built with PyQt6 and PyQtGraph\n"
             "High-performance financial pattern analysis"
         )
-
-    def openBacktestDialog(self):
-        """Open the backtesting dialog window"""
-        from PyQt6.QtWidgets import QMessageBox
-
-        # Get current settings
-        current_extremum = self.length_spinbox.value()
-        start_date = self.start_date_edit.date()
-        end_date = self.end_date_edit.date()
-
-        # Create informative message
-        msg = QMessageBox()
-        msg.setWindowTitle("Backtesting Configuration")
-        msg.setText("<b>Before proceeding with backtesting:</b>")
-
-        info_text = (
-            f"<p>Your current GUI settings will be used:</p>"
-            f"<ul>"
-            f"<li><b>Extremum Length:</b> {current_extremum}</li>"
-            f"<li><b>Date Range:</b> {start_date.toString('yyyy-MM-dd')} to {end_date.toString('yyyy-MM-dd')}</li>"
-            f"</ul>"
-            f"<p>The backtesting will inherit these settings for consistency.</p>"
-            f"<p><b>Recommendations:</b><br>"
-            f"• Use <b>Extremum Length = 1</b> for maximum pattern detection<br>"
-            f"• Select a specific <b>date range</b> for reproducible results<br>"
-            f"• Smaller date ranges (50-200 bars) allow complete pattern analysis</p>"
-            f"<p>Do you want to continue with these settings?</p>"
-        )
-        msg.setInformativeText(info_text)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
-
-        # Style the message box
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #f9f9f9;
-            }
-            QMessageBox QLabel {
-                color: #333333;
-                font-size: 12px;
-            }
-        """)
-
-        # Show message and get response
-        response = msg.exec()
-
-        if response == QMessageBox.StandardButton.Yes:
-            # Proceed with opening the dialog
-            if not hasattr(self, 'backtesting_dialog'):
-                self.backtesting_dialog = BacktestingDialog(self, self.data)
-            else:
-                # Update data if it has changed
-                self.backtesting_dialog.data = self.data
-            self.backtesting_dialog.show()
-        # If No, user can adjust settings before trying again
 
     def updateStatistics(self):
         """Update statistics display"""
