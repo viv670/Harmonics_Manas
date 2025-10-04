@@ -134,6 +134,11 @@ class PatternTracker:
         pattern_type = pattern.get('pattern_type', 'UNK')
         pattern_name = pattern.get('name', 'unknown')
 
+        # Normalize pattern name: strip "_unformed" suffix for matching
+        # This ensures unformed and formed versions of the same pattern get the same ID
+        # Example: "Gartley1_bull_unformed" -> "Gartley1_bull"
+        normalized_name = pattern_name.replace('_unformed', '')
+
         # Extract ONLY the indices for unique identification (not prices)
         point_indices = []
 
@@ -173,9 +178,10 @@ class PatternTracker:
                     else:
                         point_indices.append(f"{point_name}:{val}")
 
-        # Create key string from indices AND pattern name
+        # Create key string from indices AND normalized pattern name
         # This ensures different patterns with same structure get unique IDs
-        key_string = f"{pattern_name}_{'_'.join(point_indices)}" if point_indices else f"unknown_{id(pattern)}"
+        # Uses normalized_name (without "_unformed") so unformed and formed versions match
+        key_string = f"{normalized_name}_{'_'.join(point_indices)}" if point_indices else f"unknown_{id(pattern)}"
 
         # Generate hash for unique ID based on pattern name + point indices
         pattern_hash = hashlib.md5(str(key_string).encode()).hexdigest()[:16]
@@ -775,7 +781,17 @@ class PatternTracker:
 
                 # Initially mark as in_zone (will determine success/failure later)
                 tracked.status = 'in_zone'
-                # print(f"DEBUG: Pattern {pattern_id[:30]}... entered zone at price {entry_price:.2f}, marked as in_zone")
+
+                # Debug output for zone entry
+                is_bullish_entry = tracked.a_point[1] > tracked.b_point[1]
+                print(f"🎯 ZONE ENTRY bar {current_bar}: {tracked.pattern_type} {tracked.subtype[:20]}")
+                print(f"  Direction: {'BULL' if is_bullish_entry else 'BEAR'}, Entry price: {entry_price:.2f}")
+                if tracked.pattern_type == 'XABCD':
+                    d_vals = [float(d) for d in tracked.d_lines]
+                    print(f"  PRZ (d_lines): [{min(d_vals):.2f} - {max(d_vals):.2f}]")
+                else:
+                    print(f"  PRZ: [{zone_min:.2f} - {zone_max:.2f}]")
+
                 # Also write to file for debugging
                 with open('pattern_debug.log', 'a') as f:
                     f.write(f"Pattern {pattern_id[:30]}... entered zone at price {entry_price:.2f}, status: in_zone\n")
@@ -853,29 +869,21 @@ class PatternTracker:
         if not d_point:
             return None
 
-        # Determine pattern direction
-        if pattern_type == 'ABCD':
-            a_point = points.get('A')
-            b_point = points.get('B')
-            if not a_point or not b_point:
-                return None
-            is_bullish = a_point[1] > b_point[1]  # A > B for bullish
-        else:  # XABCD
-            x_point = points.get('X')
-            a_point = points.get('A')
-            if not x_point or not a_point:
-                return None
-            is_bullish = a_point[1] > x_point[1]  # A > X for bullish
+        # Extract indices and prices from points FIRST
+        a_point = points.get('A')
+        b_point = points.get('B')
+        c_point = points.get('C')
 
-        # Create tracked pattern for the formed pattern
-        # Extract indices and prices from points
+        if not a_point or not b_point or not c_point:
+            return None
+
         a_idx = a_point[0] if isinstance(a_point, (list, tuple)) and len(a_point) > 0 else a_point.get('index', 0) if isinstance(a_point, dict) else 0
-        b_idx = points['B'][0] if isinstance(points['B'], (list, tuple)) and len(points['B']) > 0 else points['B'].get('index', 0) if isinstance(points['B'], dict) else 0
-        c_idx = points['C'][0] if isinstance(points['C'], (list, tuple)) and len(points['C']) > 0 else points['C'].get('index', 0) if isinstance(points['C'], dict) else 0
+        b_idx = b_point[0] if isinstance(b_point, (list, tuple)) and len(b_point) > 0 else b_point.get('index', 0) if isinstance(b_point, dict) else 0
+        c_idx = c_point[0] if isinstance(c_point, (list, tuple)) and len(c_point) > 0 else c_point.get('index', 0) if isinstance(c_point, dict) else 0
 
         a_price = a_point[1] if isinstance(a_point, (list, tuple)) and len(a_point) > 1 else a_point.get('price', 0) if isinstance(a_point, dict) else 0
-        b_price = points['B'][1] if isinstance(points['B'], (list, tuple)) and len(points['B']) > 1 else points['B'].get('price', 0) if isinstance(points['B'], dict) else 0
-        c_price = points['C'][1] if isinstance(points['C'], (list, tuple)) and len(points['C']) > 1 else points['C'].get('price', 0) if isinstance(points['C'], dict) else 0
+        b_price = b_point[1] if isinstance(b_point, (list, tuple)) and len(b_point) > 1 else b_point.get('price', 0) if isinstance(b_point, dict) else 0
+        c_price = c_point[1] if isinstance(c_point, (list, tuple)) and len(c_point) > 1 else c_point.get('price', 0) if isinstance(c_point, dict) else 0
 
         x_idx = None
         x_price = None
@@ -883,6 +891,14 @@ class PatternTracker:
             x_point = points['X']
             x_idx = x_point[0] if isinstance(x_point, (list, tuple)) and len(x_point) > 0 else x_point.get('index', 0) if isinstance(x_point, dict) else 0
             x_price = x_point[1] if isinstance(x_point, (list, tuple)) and len(x_point) > 1 else x_point.get('price', 0) if isinstance(x_point, dict) else 0
+
+        # Determine pattern direction AFTER extracting prices
+        if pattern_type == 'ABCD':
+            is_bullish = a_price > b_price  # A > B for bullish
+        else:  # XABCD
+            if x_price is None:
+                return None
+            is_bullish = a_price > x_price  # A > X for bullish
 
         tracked = TrackedPattern(
             pattern_id=pattern_id,
@@ -892,7 +908,7 @@ class PatternTracker:
             b_point=(b_idx, b_price),
             c_point=(c_idx, c_price),
             x_point=(x_idx, x_price) if x_idx is not None else None,
-            detection_bar=current_bar,
+            first_seen_bar=current_bar,
             status='evaluating'  # New status for formed patterns being evaluated
         )
 
@@ -1358,34 +1374,54 @@ class PatternTracker:
             # Handle patterns that are in_zone - check for success or failure
             if tracked.status == 'in_zone':
 
-                # Get PRZ boundaries
-                prz_min = tracked.prz_min
-                prz_max = tracked.prz_max
+                # Get PRZ boundaries based on pattern type
+                if tracked.pattern_type == 'XABCD' and tracked.d_lines:
+                    # For XABCD patterns, use d_lines range
+                    prz_min = min(tracked.d_lines)
+                    prz_max = max(tracked.d_lines)
+                else:
+                    # For ABCD patterns, use prz_min/prz_max
+                    prz_min = tracked.prz_min
+                    prz_max = tracked.prz_max
 
-                # Debug logging (disabled)
-                # if pattern_id and 'ABCD' in pattern_id and tracked.zone_reached:
-                #     print(f"DEBUG in_zone check: {pattern_id[:20]}... PRZ:{prz_min:.2f}-{prz_max:.2f} H:{price_high:.2f} L:{price_low:.2f}")
+                # Skip if PRZ boundaries not set
+                if prz_min is None or prz_max is None:
+                    continue
+
+                # Debug output for XABCD patterns in zone
+                if tracked.pattern_type == 'XABCD':
+                    print(f"DEBUG bar {current_bar}: XABCD {tracked.subtype[:20]} in_zone, checking reversal:")
+                    print(f"  Direction: {'BULL' if is_bullish else 'BEAR'}, PRZ: [{prz_min:.2f} - {prz_max:.2f}]")
+                    print(f"  Current price: H={price_high:.2f}, L={price_low:.2f}")
 
                 if is_bullish:
                     # Bullish pattern: price falls TO the PRZ, then should reverse UP
                     # Success: price rises and exits above the PRZ (reversal upward)
                     if price_high > prz_max:
                         reversal_confirmed = True
-                        # print(f"  -> SUCCESS: Bullish reversal confirmed (high {price_high:.2f} > PRZ max {prz_max:.2f})")
+                        if tracked.pattern_type == 'XABCD':
+                            print(f"  ✅ REVERSAL CONFIRMED: price_high {price_high:.2f} > prz_max {prz_max:.2f}")
                     # Failure: price breaks below the PRZ (violation)
                     elif price_low < prz_min:
                         zone_violated = True
-                        # print(f"  -> FAILED: PRZ violated (low {price_low:.2f} < PRZ min {prz_min:.2f})")
+                        if tracked.pattern_type == 'XABCD':
+                            print(f"  ❌ ZONE VIOLATED: price_low {price_low:.2f} < prz_min {prz_min:.2f}")
+                    elif tracked.pattern_type == 'XABCD':
+                        print(f"  ⏳ Still in zone, waiting...")
                 else:
                     # Bearish pattern: price rises TO the PRZ, then should reverse DOWN
                     # Success: price falls and exits below the PRZ (reversal downward)
                     if price_low < prz_min:
                         reversal_confirmed = True
-                        # print(f"  -> SUCCESS: Bearish reversal confirmed (low {price_low:.2f} < PRZ min {prz_min:.2f})")
+                        if tracked.pattern_type == 'XABCD':
+                            print(f"  ✅ REVERSAL CONFIRMED: price_low {price_low:.2f} < prz_min {prz_min:.2f}")
                     # Failure: price breaks above the PRZ (violation)
                     elif price_high > prz_max:
                         zone_violated = True
-                        # print(f"  -> FAILED: PRZ violated (high {price_high:.2f} > PRZ max {prz_max:.2f})")
+                        if tracked.pattern_type == 'XABCD':
+                            print(f"  ❌ ZONE VIOLATED: price_high {price_high:.2f} > prz_max {prz_max:.2f}")
+                    elif tracked.pattern_type == 'XABCD':
+                        print(f"  ⏳ Still in zone, waiting...")
 
             # For patterns NOT in_zone, check for violations (for already successful patterns)
             if tracked.status != 'in_zone' and tracked.pattern_type == 'ABCD':
@@ -1438,7 +1474,7 @@ class PatternTracker:
             # Now determine the outcome based on the pattern's status and price action
             if tracked.status == 'in_zone':
                 # Pattern is in zone - check if it should transition to success or failure
-                if 'reversal_confirmed' in locals() and reversal_confirmed:
+                if reversal_confirmed:
                     # Pattern succeeded - price left PRZ in expected direction
                     tracked.status = 'success'
                     tracked.reversal_confirmed = True
@@ -1447,6 +1483,7 @@ class PatternTracker:
                     # For bearish, reversal price is when it went below PRZ min
                     tracked.reversal_price = price_high if is_bullish else price_low
                     successful_patterns.append(pattern_id)
+                    print(f"✅ SUCCESS: {tracked.pattern_type} {tracked.subtype} reversed successfully at bar {current_bar}")
 
                     # Update zone entries for this pattern
                     for entry_id in tracked.zone_entries:

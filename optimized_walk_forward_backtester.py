@@ -169,8 +169,9 @@ class OptimizedWalkForwardBacktester:
         future_buffer: int = 5,  # Bars to leave as buffer (avoid look-ahead)
         min_pattern_score: float = 0.7,  # Minimum confidence score to trade
         max_open_trades: int = 5,  # Maximum concurrent trades
-        detection_interval: int = 10,  # Detect patterns every N bars for efficiency
-        extremum_length: int = 1  # Length for extremum detection (1 matches GUI default)
+        detection_interval: int = 1,  # Detect patterns every N bars (use 1 to catch formed patterns when structure breaks)
+        extremum_length: int = 1,  # Length for extremum detection (1 matches GUI default)
+        validate_d_crossing_during_tracking: bool = False  # Dismiss patterns when D point crossed during tracking
     ):
         """
         Initialize the optimized backtester.
@@ -182,6 +183,7 @@ class OptimizedWalkForwardBacktester:
             lookback_window: Kept for compatibility (not used)
             future_buffer: Bars to exclude from current time (prevent bias)
             min_pattern_score: Minimum pattern quality score to generate signal
+            validate_d_crossing_during_tracking: If True, dismiss patterns when D point is crossed during tracking
             max_open_trades: Maximum number of concurrent open trades
             detection_interval: Run pattern detection every N bars (optimization)
         """
@@ -193,6 +195,7 @@ class OptimizedWalkForwardBacktester:
         self.max_open_trades = max_open_trades
         self.detection_interval = detection_interval
         self.extremum_length = extremum_length  # Store extremum detection length
+        self.validate_d_crossing_during_tracking = validate_d_crossing_during_tracking  # Toggle for D crossing dismissal
 
         # Trading state
         self.current_capital = initial_capital
@@ -391,34 +394,42 @@ class OptimizedWalkForwardBacktester:
             # Calculate bars since D formation
             bars_since_d = current_idx - tracker.detection_bar
 
-            # Check if D point is crossed (price crosses D point after formation)
+            # Determine pattern direction (used in multiple checks below)
             is_bullish = tracker.direction == 'bullish'
-            d_point_crossed = False
 
-            if is_bullish:
-                # For bullish, D point crossed if price goes below D point
-                if current_bar['Low'] < tracker.d_price:
-                    d_point_crossed = True
-            else:
-                # For bearish, D point crossed if price goes above D point
-                if current_bar['High'] > tracker.d_price:
-                    d_point_crossed = True
+            # Check if D point is crossed (price crosses D point after formation)
+            # Only if validate_d_crossing_during_tracking is enabled
+            if self.validate_d_crossing_during_tracking:
+                d_point_crossed = False
 
-            if d_point_crossed:
-                # Mark pattern as invalid due to D point crossing
-                # Update the pattern in tracker to mark as dismissed
-                if pattern_id in self.pattern_tracker.tracked_patterns:
-                    tracked_pattern = self.pattern_tracker.tracked_patterns[pattern_id]
-                    if tracked_pattern.status not in ['dismissed', 'failed']:
-                        tracked_pattern.status = 'dismissed'
-                        tracked_pattern.dismissal_reason = 'D_point_crossed'
-                        tracked_pattern.dismissal_bar = current_idx
-                        print(f"DEBUG: D point crossed for {pattern_id[:20]}... at bar {current_idx}, pattern invalidated")
+                if is_bullish:
+                    # For bullish, D point crossed if price goes below D point
+                    if current_bar['Low'] < tracker.d_price:
+                        d_point_crossed = True
+                else:
+                    # For bearish, D point crossed if price goes above D point
+                    if current_bar['High'] > tracker.d_price:
+                        d_point_crossed = True
 
-                tracker.total_bars_tracked = bars_since_d
-                tracker.is_tracking_complete = True
-                patterns_to_remove.add(pattern_id)
-                continue
+                if d_point_crossed:
+                    # Mark pattern as invalid due to D point crossing
+                    # BUT: Do NOT dismiss patterns that already succeeded!
+                    if pattern_id in self.pattern_tracker.tracked_patterns:
+                        tracked_pattern = self.pattern_tracker.tracked_patterns[pattern_id]
+                        # Only dismiss if pattern hasn't succeeded yet
+                        if tracked_pattern.status not in ['dismissed', 'failed', 'success']:
+                            tracked_pattern.status = 'dismissed'
+                            tracked_pattern.dismissal_reason = 'D_point_crossed'
+                            tracked_pattern.dismissal_bar = current_idx
+                            print(f"DEBUG: D point crossed for {pattern_id[:20]}... at bar {current_idx}, pattern invalidated")
+                        elif tracked_pattern.status == 'success':
+                            # Pattern already succeeded - D point crossing after success doesn't invalidate it
+                            print(f"DEBUG: D point crossed for {pattern_id[:20]}... at bar {current_idx}, but pattern already succeeded - keeping success status")
+
+                    tracker.total_bars_tracked = bars_since_d
+                    tracker.is_tracking_complete = True
+                    patterns_to_remove.add(pattern_id)
+                    continue
 
             # Check if PRZ is broken (price beyond PRZ zone)
             prz_broken = False
@@ -807,11 +818,79 @@ class OptimizedWalkForwardBacktester:
             import traceback
             traceback.print_exc()
 
-        # DON'T detect formed patterns separately in backtest
-        # In a proper walk-forward backtest, ALL patterns start as unformed
-        # and transition to formed when price enters the PRZ zone
-        # This ensures 100% accuracy - we never "discover" a pattern that's already formed
+        # ALSO detect formed patterns during walk-forward
+        # Some patterns form very quickly (e.g., points only 2-4 bars apart)
+        # and are already formed by the time we detect them
+        # We need to catch these to track their reversal success
         formed_patterns = []
+        try:
+            # Debug at key bars
+            if current_idx in [50, 100, 150, 200]:
+                is_cached = current_idx in self.cached_patterns['unformed']
+                print(f"DEBUG at bar {current_idx}: current_idx in cached_patterns['unformed'] = {is_cached}")
+
+            # Detect formed patterns on SAME schedule as unformed
+            # If we just ran unformed detection, also run formed detection
+            if current_idx in self.cached_patterns['unformed']:
+                # Debug
+                if current_idx in [50, 100]:
+                    print(f"  -> ENTERING formed detection block at bar {current_idx}")
+
+                # Prepare data for GUI-compatible detection
+                data_with_date = data_slice.reset_index()
+                if 'time' in data_with_date.columns:
+                    data_with_date.rename(columns={'time': 'Date'}, inplace=True)
+                elif data_with_date.index.name == 'time':
+                    data_with_date['Date'] = data_with_date.index
+
+                # Convert extremums to indexed format
+                # extremum_points format: (timestamp, price, is_high, bar_index)
+                # But for formed pattern detection, we already have bar_index in element [3]
+                extremums_with_idx = []
+                for ext in extremum_points:
+                    timestamp, price, is_high, bar_index = ext
+                    # Use bar_index directly (it's already the DataFrame row index)
+                    extremums_with_idx.append((bar_index, price, is_high, bar_index))
+
+                if current_idx in [50]:
+                    print(f"  -> Converted {len(extremums_with_idx)} extremums (using bar_index directly)")
+
+                # Detect formed XABCD patterns
+                if current_idx in [50, 100]:
+                    print(f"  -> len(extremums_with_idx) = {len(extremums_with_idx)} (need >= 5)")
+
+                if len(extremums_with_idx) >= 5:
+                    if current_idx in [50, 100]:
+                        print(f"  -> Calling detect_all_gui_patterns with {len(extremums_with_idx)} extremums...")
+
+                    _, formed_xabcd = detect_all_gui_patterns(
+                        extremums_with_idx,
+                        data_with_date,
+                        max_patterns=200,
+                        validate_d_crossing=False
+                    )
+
+                    if current_idx in [50, 100]:
+                        print(f"  -> detect_all_gui_patterns returned {len(formed_xabcd)} XABCD patterns")
+
+                    # Debug: show total formed patterns detected
+                    if current_idx % 50 == 0 and current_idx > 0:
+                        print(f"DEBUG FORMED DETECTION at bar {current_idx}: detect_all_gui_patterns returned {len(formed_xabcd)} XABCD patterns")
+
+                    # Filter to only patterns with D point (truly formed)
+                    for pattern in formed_xabcd:
+                        if 'D' in pattern.get('points', {}):
+                            pattern['pattern_type'] = 'XABCD'
+                            pattern['pattern_hash'] = self.pattern_tracker.generate_pattern_id(pattern)
+                            formed_patterns.append(pattern)
+
+                    if current_idx % 50 == 0 and current_idx > 0 and len(formed_patterns) > 0:
+                        print(f"  -> Filtered to {len(formed_patterns)} patterns with D point")
+
+        except Exception as e:
+            print(f"Error detecting formed patterns: {e}")
+            import traceback
+            traceback.print_exc()
 
         return unformed_patterns, formed_patterns
 
@@ -1005,6 +1084,25 @@ class OptimizedWalkForwardBacktester:
         print(f"Future buffer: {self.future_buffer} bars")
         print(f"Initial capital: ${self.initial_capital:,.2f}")
         print(f"Min pattern score: {self.min_pattern_score}")
+
+        # Check for validate_d_crossing setting consistency
+        # The backtester uses validate_d_crossing=False when calling detect_all_gui_patterns (lines 870, 1417)
+        DETECTION_VALIDATE_D_CROSSING = False  # Hardcoded value used in detection calls
+
+        # Warn if settings are inconsistent
+        if self.validate_d_crossing_during_tracking != DETECTION_VALIDATE_D_CROSSING:
+            print("\n⚠️  WARNING: D-crossing validation settings mismatch!")
+            print(f"   - Pattern detection: validate_d_crossing = {DETECTION_VALIDATE_D_CROSSING} ({'strict - rejects D crossed' if DETECTION_VALIDATE_D_CROSSING else 'lenient - allows D crossed'})")
+            print(f"   - Pattern tracking: validate_d_crossing_during_tracking = {self.validate_d_crossing_during_tracking} ({'strict - dismisses D crossed' if self.validate_d_crossing_during_tracking else 'lenient - allows D crossed'})")
+            print("   → GUI and backtesting may show different results due to different validation settings.")
+            if self.validate_d_crossing_during_tracking and not DETECTION_VALIDATE_D_CROSSING:
+                print("   → Patterns allowed at detection may be dismissed during tracking.")
+            else:
+                print("   → Patterns rejected at detection won't reach tracking phase.")
+            print(f"   → For consistency, set validate_d_crossing_during_tracking = {DETECTION_VALIDATE_D_CROSSING}")
+        else:
+            print(f"D-crossing validation: {'Strict (dismisses on D crossing)' if self.validate_d_crossing_during_tracking else 'Lenient (allows D crossing)'} [Consistent]")
+
         print("-" * 60)
 
         # Reset state
@@ -1089,6 +1187,8 @@ class OptimizedWalkForwardBacktester:
                         self.pattern_tracker.track_unformed_pattern(pattern, idx)
                         if pattern.get('pattern_type') == 'XABCD':
                             xabcd_count_new += 1
+                            # Debug: Show when XABCD patterns are first tracked
+                            print(f"  🆕 TRACKED NEW XABCD @ bar {idx}: {pattern.get('name', 'unknown')[:20]} - X:{x_idx} A:{a_idx} B:{b_idx} C:{c_idx} - ID:{pattern_id[:30]}")
                         # Track pattern type counts
                         pattern_type = pattern.get('name', 'unknown')
                         if pattern_type not in pattern_type_counts:
@@ -1096,9 +1196,32 @@ class OptimizedWalkForwardBacktester:
                         pattern_type_counts[pattern_type] += 1
                 if xabcd_count_total > 0 and idx % 50 == 0:
                     print(f"DEBUG at bar {idx}: Found {xabcd_count_total} XABCD, {xabcd_count_new} are new/unique")
-            # Formed patterns are no longer detected separately
-            # All patterns transition from unformed → formed when price enters PRZ
-            # This block is intentionally removed for 100% walk-forward accuracy
+
+            # Also track formed patterns (quick-forming patterns that we missed in unformed state)
+            if formed_patterns:
+                total_formed_found += len(formed_patterns)
+                formed_count_new = 0
+                for pattern in formed_patterns:
+                    pattern_id = self.pattern_tracker.generate_pattern_id(pattern)
+
+                    # Only track if not already tracked
+                    if pattern_id not in unique_formed_patterns:
+                        unique_formed_patterns.add(pattern_id)
+                        # Track directly as formed pattern (pass all data up to current bar)
+                        data_slice = self.data.iloc[:idx+1]
+                        self.pattern_tracker.track_formed_pattern(pattern, idx, data_slice)
+                        formed_count_new += 1
+
+                        indices = pattern.get('indices', {})
+                        x_idx = indices.get('X', '?')
+                        a_idx = indices.get('A', '?')
+                        b_idx = indices.get('B', '?')
+                        c_idx = indices.get('C', '?')
+                        d_idx = indices.get('D', '?')
+                        print(f"  🆕 TRACKED FORMED XABCD @ bar {idx}: {pattern.get('name', 'unknown')[:20]} - X:{x_idx} A:{a_idx} B:{b_idx} C:{c_idx} D:{d_idx} - ID:{pattern_id[:30]}")
+
+                if formed_count_new > 0:
+                    print(f"DEBUG at bar {idx}: Found {len(formed_patterns)} formed XABCD, {formed_count_new} are new")
 
             # Update C points for pending patterns when new extremums appear
             updated_c_patterns = self.pattern_tracker.update_c_points(
@@ -1106,12 +1229,17 @@ class OptimizedWalkForwardBacktester:
                 current_bar=idx
             )
 
-            # Check for pattern dismissals (structure breaks)
-            dismissed_patterns = self.pattern_tracker.check_pattern_dismissal(
-                price_high=current_bar['High'],
-                price_low=current_bar['Low'],
-                current_bar=idx
-            )
+            # STRUCTURE BREAK DISMISSAL REMOVED:
+            # Previously dismissed patterns when price crossed point B, but this was preventing
+            # valid patterns from being detected. When price "breaks structure" by crossing B,
+            # it often IS forming point D. The formed pattern detection with ratio validation
+            # will properly filter valid patterns. No need to prematurely dismiss unformed patterns.
+            #
+            # dismissed_patterns = self.pattern_tracker.check_pattern_dismissal(
+            #     price_high=current_bar['High'],
+            #     price_low=current_bar['Low'],
+            #     current_bar=idx
+            # )
 
             # Check if current price enters any pattern's D zone
             current_timestamp = current_bar.name if hasattr(current_bar, 'name') else None
@@ -1301,8 +1429,17 @@ class OptimizedWalkForwardBacktester:
                 pass
 
         # Detect ALL patterns from full dataset
+        # Use validate_d_crossing=False to match GUI without strict validation
         data_with_date = self.data.reset_index()
-        all_abcd_full, all_xabcd_full = detect_all_gui_patterns(extremums_with_idx, data_with_date, max_patterns=200)
+        # Rename time column to Date for GUI compatibility
+        if 'time' in data_with_date.columns:
+            data_with_date.rename(columns={'time': 'Date'}, inplace=True)
+        all_abcd_full, all_xabcd_full = detect_all_gui_patterns(
+            extremums_with_idx,
+            data_with_date,
+            max_patterns=200,
+            validate_d_crossing=False  # Match GUI non-strict mode
+        )
 
         # Count formed patterns (those with D point)
         formed_abcd_patterns = [p for p in all_abcd_full if 'points' in p and 'D' in p['points']]
@@ -1314,6 +1451,11 @@ class OptimizedWalkForwardBacktester:
         # Update the total formed count to match GUI
         self.total_formed_found = self.formed_abcd_count + self.formed_xabcd_count
         print(f"Formed patterns from full dataset: {self.formed_abcd_count} ABCD + {self.formed_xabcd_count} XABCD = {self.total_formed_found}")
+
+        # NOTE: We do NOT add these formed patterns to tracking here!
+        # That would defeat the purpose of walk-forward backtesting.
+        # The patterns should be detected bar-by-bar during simulation.
+        # These counts are ONLY for comparison with GUI display.
 
         # Debug: Show pattern IDs from full dataset
         print(f"\nDEBUG: Formed pattern IDs from full dataset:")
@@ -1345,8 +1487,15 @@ class OptimizedWalkForwardBacktester:
         print(f"Patterns with outcomes:")
         print(f"  Success (Zone + Reversal): {tracking_stats['success']}")
         print(f"  Failed (Zone Violated): {tracking_stats['failed']}")
+        print(f"  In Zone (Active): {tracking_stats['in_zone']}")
         print(f"  Dismissed (Structure Break): {tracking_stats['dismissed']}")
         print(f"  Pending (Still Valid): {tracking_stats['pending']}")
+
+        # Debug: Show which formed patterns are in which state
+        print(f"\n📊 FORMED PATTERNS STATUS (Total: {self.total_formed_found}):")
+        for pattern_id, tracked in self.pattern_tracker.tracked_patterns.items():
+            if tracked.zone_reached:  # These are formed patterns that entered PRZ
+                print(f"  {tracked.pattern_type} {tracked.subtype[:20]}: status={tracked.status}, bar={tracked.zone_entry_bar}")
 
         if tracking_stats['concluded'] > 0:
             print(f"\nTrading Performance (Success vs Failed):")
@@ -1618,7 +1767,7 @@ def run_optimized_backtest():
         future_buffer=5,  # Stop 5 bars before current
         min_pattern_score=0.5,  # Lower threshold for more trades
         max_open_trades=5,
-        detection_interval=10  # Detect patterns every 10 bars
+        detection_interval=1  # Detect patterns every bar to catch fast-forming patterns
     )
 
     # Run backtest

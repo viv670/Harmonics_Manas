@@ -108,7 +108,8 @@ def validate_price_containment_bullish_xabcd(df: pd.DataFrame,
     4. C should be the highest point between B and C
 
     Note: C can be updated to new extremum highs - this is handled by pattern tracking.
-    Structure breaks (price below B) are handled by check_pattern_dismissal().
+    Structure break dismissal REMOVED - formed pattern detection with ratio validation
+    handles pattern quality filtering. Price crossing B often forms point D.
     """
     # Assert required parameters are valid
     assert df is not None and not df.empty, "DataFrame is required for validation"
@@ -178,7 +179,8 @@ def validate_price_containment_bearish_xabcd(df: pd.DataFrame,
     4. C should be the lowest point between B and C
 
     Note: C can be updated to new extremum lows - this is handled by pattern tracking.
-    Structure breaks (price above B) are handled by check_pattern_dismissal().
+    Structure break dismissal REMOVED - formed pattern detection with ratio validation
+    handles pattern quality filtering. Price crossing B often forms point D.
     """
     # Assert required parameters are valid
     assert df is not None and not df.empty, "DataFrame is required for validation"
