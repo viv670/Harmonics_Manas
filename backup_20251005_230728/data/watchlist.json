@@ -1,0 +1,76 @@
+{
+  "charts": [
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "1d",
+      "last_update": "2025-10-05T10:51:20.384961",
+      "next_update": "2025-10-06T10:51:20.384961",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_1d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "last_update": "2025-10-04T10:45:33.486351",
+      "next_update": "2025-10-06T10:45:33.486351",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_2d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "3d",
+      "last_update": "2025-10-04T10:45:40.737059",
+      "next_update": "2025-10-07T10:45:40.737059",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_3d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "3d",
+      "last_update": "2025-10-04T10:45:54.202974",
+      "next_update": "2025-10-07T10:45:54.202974",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_3d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "last_update": "2025-10-04T10:46:07.393253",
+      "next_update": "2025-10-06T10:46:07.393253",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_2d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "1d",
+      "last_update": "2025-10-05T10:51:20.905235",
+      "next_update": "2025-10-06T10:51:20.905235",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_1d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "timeframe": "1d",
+      "last_update": "2025-10-05T22:48:29.242053",
+      "next_update": "2025-10-06T22:48:29.242053",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\hypeusdt_1d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "XLMUSDT",
+      "timeframe": "1d",
+      "last_update": "2025-10-05T22:55:02.114763",
+      "next_update": "2025-10-06T22:55:02.114763",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\xlmusdt_1d.csv",
+      "enabled": true
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "timeframe": "4h",
+      "last_update": "2025-10-05T22:58:27.626391",
+      "next_update": "2025-10-06T02:58:27.626391",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\hypeusdt_4h.csv",
+      "enabled": true
+    }
+  ]
+}
