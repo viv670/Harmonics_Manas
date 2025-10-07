@@ -263,9 +263,20 @@ def get_pattern_cache() -> PatternCache:
     if _global_pattern_cache is None:
         with _cache_lock:
             if _global_pattern_cache is None:
+                # Try to load config for cache settings
+                try:
+                    from config import get_config
+                    cfg = get_config()
+                    max_size = cfg.cache.max_cache_size
+                    ttl = cfg.cache.ttl_seconds
+                except:
+                    # Fallback to defaults if config not available
+                    max_size = 100
+                    ttl = 3600
+
                 _global_pattern_cache = PatternCache(
-                    max_cache_size=100,
-                    ttl_seconds=3600  # 1 hour
+                    max_cache_size=max_size,
+                    ttl_seconds=ttl
                 )
 
     return _global_pattern_cache
