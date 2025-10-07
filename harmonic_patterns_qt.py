@@ -36,6 +36,9 @@ from auto_update_scheduler import AutoUpdateScheduler
 from watchlist_panel import WatchlistPanel
 from toast_notification import ToastManager
 
+# Pattern monitoring modules
+from active_signals_window import ActiveSignalsWindow
+
 # PRZ Pattern color mapping for better visual identification
 PRZ_PATTERN_COLORS = {
     '1a': '#FF0000',    # Red
@@ -400,15 +403,25 @@ class PatternDetectionWorker(QThread):
 
     def detect_abcd_patterns(self):
         """Detect Formed ABCD patterns"""
-        # BALANCED LIMITS for good performance and pattern discovery
-        limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
+        # Get search window value
+        max_window = self.get_search_window(len(self.extremum_points))
+
+        # When search window is unlimited, use ALL extremum points
+        if max_window is None:
+            limited_extremum_points = self.extremum_points
+            max_pats = None  # No pattern limit
+        else:
+            # Use balanced limits for performance
+            limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
+            max_pats = 100
 
         return detect_formed_abcd_patterns(
-            limited_extremum_points,  # Last 200 extremum points
+            limited_extremum_points,
             df=self.data,
-            log_details=False,  # Disable logs for speed
-            max_patterns=100,    # Reasonable limit
-            max_search_window=20  # Reasonable search window
+            log_details=False,
+            max_patterns=max_pats,
+            max_search_window=max_window,
+            validate_d_crossing=self.validate_d_crossing
         )
 
     def get_search_window(self, dataset_size):
@@ -417,8 +430,8 @@ class PatternDetectionWorker(QThread):
         if self.main_window and hasattr(self.main_window, 'search_window_spinbox'):
             gui_window = self.main_window.search_window_spinbox.value()
 
-            if gui_window == 9999:
-                # User wants unlimited search
+            if gui_window == 9:
+                # User wants unlimited search (9 is easier to type than 9999)
                 return None
             elif gui_window > 0:
                 # User specified a search window
@@ -437,19 +450,24 @@ class PatternDetectionWorker(QThread):
         # Get search window value
         max_window = self.get_search_window(len(self.extremum_points))
 
-        # Adaptive limits based on dataset size
-        if len(self.extremum_points) < 100:
-            # Small dataset - use ALL points
+        # When search window is unlimited, use ALL extremum points
+        if max_window is None:
             limited_extremum_points = self.extremum_points
-            max_pats = None    # No limit
-        elif len(self.extremum_points) < 500:
-            # Medium dataset - use moderate limits
-            limited_extremum_points = self.extremum_points[-300:] if len(self.extremum_points) > 300 else self.extremum_points
-            max_pats = 200
+            max_pats = None  # No pattern limit
         else:
-            # Large dataset - use balanced limits
-            limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
-            max_pats = 100
+            # Adaptive limits based on dataset size
+            if len(self.extremum_points) < 100:
+                # Small dataset - use ALL points
+                limited_extremum_points = self.extremum_points
+                max_pats = None    # No limit
+            elif len(self.extremum_points) < 500:
+                # Medium dataset - use moderate limits
+                limited_extremum_points = self.extremum_points[-300:] if len(self.extremum_points) > 300 else self.extremum_points
+                max_pats = 200
+            else:
+                # Large dataset - use balanced limits
+                limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
+                max_pats = 100
 
         return detect_formed_abcd_patterns(
             limited_extremum_points,
@@ -465,19 +483,24 @@ class PatternDetectionWorker(QThread):
         # Get search window value
         max_window = self.get_search_window(len(self.extremum_points))
 
-        # Adaptive limits based on dataset size
-        if len(self.extremum_points) < 100:
-            # Small dataset - use ALL points
+        # When search window is unlimited, use ALL extremum points
+        if max_window is None:
             limited_extremum_points = self.extremum_points
-            max_pats = None    # No limit
-        elif len(self.extremum_points) < 500:
-            # Medium dataset - use moderate limits
-            limited_extremum_points = self.extremum_points[-300:] if len(self.extremum_points) > 300 else self.extremum_points
-            max_pats = 200
+            max_pats = None  # No pattern limit
         else:
-            # Large dataset - use balanced limits
-            limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
-            max_pats = 100
+            # Adaptive limits based on dataset size
+            if len(self.extremum_points) < 100:
+                # Small dataset - use ALL points
+                limited_extremum_points = self.extremum_points
+                max_pats = None    # No limit
+            elif len(self.extremum_points) < 500:
+                # Medium dataset - use moderate limits
+                limited_extremum_points = self.extremum_points[-300:] if len(self.extremum_points) > 300 else self.extremum_points
+                max_pats = 200
+            else:
+                # Large dataset - use balanced limits
+                limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
+                max_pats = 100
 
         print(f"DEBUG: Calling detect_formed_xabcd_patterns with:")
         print(f"  - Extremum points: {len(limited_extremum_points)}")
@@ -2755,10 +2778,11 @@ class PatternViewerWindow(QMainWindow):
         c_x = x_coords[c_idx]
         c_price = y_coords[c_idx]
 
+        # Calculate Fibonacci levels
+        # For BULLISH: 0% at C/A (low), 100% at D (high) - measures upward extension
+        # For BEARISH: 0% at D (high), 100% at C/A (low) - measures downward retracement
         if is_bullish:
-            # BULLISH: From lowest formation point (A or C) UP to highest swing in PRZ (D)
-            # In bullish patterns: A is high, C is high, D is low
-            # So we go from the HIGHEST point (A or C) down to D
+            # BULLISH: From highest formation point (A or C) to D
             if a_price > c_price:
                 start_x, start_price = a_x, a_price
                 formation_label = 'A'
@@ -2767,16 +2791,24 @@ class PatternViewerWindow(QMainWindow):
                 formation_label = 'C'
             end_x, end_price = d_x, d_price
         else:
-            # BEARISH: From highest formation point (A or C) DOWN to lowest swing in PRZ (D)
-            # In bearish patterns: A is low, C is low, D is high
-            # So we go from the LOWEST point (A or C) up to D
-            if a_price < c_price:
-                start_x, start_price = a_x, a_price
-                formation_label = 'A'
-            else:
-                start_x, start_price = c_x, c_price
-                formation_label = 'C'
-            end_x, end_price = d_x, d_price
+            # BEARISH: 0% at D, retracement back to A/C
+            # For drawing, we still need start/end coordinates
+            # But we'll swap the prices so 0% is at D
+            start_x, end_x = d_x, d_x  # X coordinates for positioning
+
+            # Price: 0% at D (high), 100% at lowest of A/C
+            start_price = d_price  # 0% at D
+            end_price = min(a_price, c_price)  # 100% at lowest formation point
+
+            formation_label = 'D'
+
+        # DEBUG: Print Fibonacci calculation
+        print(f"\n🔍 MAIN GUI FIBONACCI DEBUG:")
+        print(f"   Direction: {'BULLISH' if is_bullish else 'BEARISH'}")
+        print(f"   A Price: ${a_price:.2f}, C Price: ${c_price:.2f}, D Price: ${d_price:.2f}")
+        print(f"   Start Price (0%): ${start_price:.2f}")
+        print(f"   End Price (100%): ${end_price:.2f}")
+        print(f"   Price Range: ${end_price - start_price:.2f}")
 
         # Draw Fibonacci levels from formation point to D
         self._drawFibLevels(start_x, end_x, start_price, end_price, fib_levels, fib_labels, is_bullish, 'Fib')
@@ -3453,6 +3485,65 @@ class HarmonicPatternDetector(QMainWindow):
         watchlist_group.setLayout(watchlist_layout)
         controls_layout.addWidget(watchlist_group)
 
+        # Pattern Monitoring Group
+        monitoring_group = QGroupBox("🔔 Pattern Monitoring & Alerts")
+        monitoring_layout = QVBoxLayout()
+
+        # Info label
+        monitoring_info = QLabel("Automated pattern detection with desktop notifications")
+        monitoring_info.setWordWrap(True)
+        monitoring_info.setStyleSheet("color: gray; font-size: 10px;")
+        monitoring_layout.addWidget(monitoring_info)
+
+        # Status label
+        self.monitoring_status_label = QLabel("Status: Checking...")
+        monitoring_layout.addWidget(self.monitoring_status_label)
+
+        # Buttons layout
+        monitoring_btn_layout = QHBoxLayout()
+
+        # Enable/Disable button
+        self.toggle_monitoring_btn = QPushButton("▶ Enable Monitoring")
+        self.toggle_monitoring_btn.clicked.connect(self.togglePatternMonitoring)
+        self.toggle_monitoring_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #C8E6C9;
+                color: black;
+                font-weight: bold;
+                padding: 8px;
+                border: 1px solid #81C784;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #A5D6A7;
+                border-color: #66BB6A;
+            }
+        """)
+        monitoring_btn_layout.addWidget(self.toggle_monitoring_btn)
+
+        # View Active Signals button
+        view_signals_btn = QPushButton("📊 View Signals")
+        view_signals_btn.clicked.connect(self.openActiveSignals)
+        view_signals_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E1F5FE;
+                color: black;
+                padding: 8px;
+                border: 1px solid #81D4FA;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #B3E5FC;
+                border-color: #4FC3F7;
+            }
+        """)
+        monitoring_btn_layout.addWidget(view_signals_btn)
+
+        monitoring_layout.addLayout(monitoring_btn_layout)
+
+        monitoring_group.setLayout(monitoring_layout)
+        controls_layout.addWidget(monitoring_group)
+
         # Binance Data Download group
         download_group = QGroupBox("Download Cryptocurrency Data")
         download_layout = QVBoxLayout()
@@ -3713,6 +3804,31 @@ class HarmonicPatternDetector(QMainWindow):
 
         self.search_window_custom_radio.toggled.connect(onCustomRadioToggled)
 
+        # Create a hidden spinbox to store the current search window value
+        # This is what get_search_window() checks for
+        self.search_window_spinbox = QSpinBox()
+        self.search_window_spinbox.setMinimum(0)
+        self.search_window_spinbox.setMaximum(9999)
+        self.search_window_spinbox.setValue(0)  # Default: Auto
+        self.search_window_spinbox.setVisible(False)  # Hidden from UI
+
+        # Update hidden spinbox when radio buttons change
+        def updateSearchWindowValue():
+            if self.search_window_optimum_radio.isChecked():
+                self.search_window_spinbox.setValue(0)  # Auto
+            elif self.search_window_minimum_radio.isChecked():
+                self.search_window_spinbox.setValue(1)  # Minimum
+            elif self.search_window_maximum_radio.isChecked():
+                self.search_window_spinbox.setValue(9)  # Maximum (unlimited)
+            elif self.search_window_custom_radio.isChecked():
+                self.search_window_spinbox.setValue(self.search_window_custom_spinbox.value())
+
+        self.search_window_optimum_radio.toggled.connect(updateSearchWindowValue)
+        self.search_window_minimum_radio.toggled.connect(updateSearchWindowValue)
+        self.search_window_maximum_radio.toggled.connect(updateSearchWindowValue)
+        self.search_window_custom_radio.toggled.connect(updateSearchWindowValue)
+        self.search_window_custom_spinbox.valueChanged.connect(lambda: updateSearchWindowValue() if self.search_window_custom_radio.isChecked() else None)
+
         # Add all radio buttons to layout
         search_window_vlayout.addWidget(self.search_window_optimum_radio)
         search_window_vlayout.addWidget(self.search_window_minimum_radio)
@@ -3809,6 +3925,14 @@ class HarmonicPatternDetector(QMainWindow):
         reset_view_action.triggered.connect(self.resetView)
         view_menu.addAction(reset_view_action)
 
+        # Tools menu
+        tools_menu = menubar.addMenu('Tools')
+
+        active_signals_action = QAction('🔔 Active Signals', self)
+        active_signals_action.setShortcut('Ctrl+Shift+A')
+        active_signals_action.triggered.connect(self.openActiveSignals)
+        tools_menu.addAction(active_signals_action)
+
         # Help menu
         help_menu = menubar.addMenu('Help')
 
@@ -3838,9 +3962,9 @@ class HarmonicPatternDetector(QMainWindow):
     def autoLoadBTCData(self):
         """Auto-load BTC data file on startup"""
         try:
-            # Check if btcusdt_1d.csv exists
+            # Check if btcusdt_1d.csv exists in data folder
             import os
-            btc_file = os.path.join(os.path.dirname(__file__), 'btcusdt_1d.csv')
+            btc_file = os.path.join(os.path.dirname(__file__), 'data', 'btcusdt_1d.csv')
 
             if os.path.exists(btc_file):
                 # Load and standardize the data
@@ -3886,10 +4010,12 @@ class HarmonicPatternDetector(QMainWindow):
         try:
             print("Initializing auto-updater...")
 
-            # Create status callback for updates
+            # Create status callback for updates (thread-safe using signal)
             def status_callback(message):
                 try:
-                    self.status_bar.showMessage(message, 5000)
+                    # Don't call UI methods directly from background thread
+                    # Just print to console instead
+                    print(f"[Auto-Update] {message}")
                 except:
                     pass  # Ignore errors in callback
 
@@ -3921,7 +4047,8 @@ class HarmonicPatternDetector(QMainWindow):
                 retry_delay=60,  # 60 seconds between retries
                 progress_callback=progress_callback,
                 status_callback=status_callback,
-                notification_callback=notification_callback
+                notification_callback=notification_callback,
+                enable_pattern_monitoring=False  # Pattern monitoring disabled by default
             )
 
             # Update watchlist panel reference after auto_updater is created
@@ -3946,6 +4073,9 @@ class HarmonicPatternDetector(QMainWindow):
                     "Auto-Update Enabled",
                     f"Monitoring {summary['enabled_charts']} charts. Updates every 10 minutes."
                 )
+
+            # Update pattern monitoring status in UI
+            self.updateMonitoringStatus()
 
         except Exception as e:
             import traceback
@@ -5256,6 +5386,126 @@ class HarmonicPatternDetector(QMainWindow):
             print(f"Error args: {e.args}")
             print(f"Full traceback:\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Error", f"Failed to create All Patterns window:\n{str(e)}")
+
+    def togglePatternMonitoring(self):
+        """Toggle pattern monitoring on/off"""
+        try:
+            if not hasattr(self, 'auto_updater') or not self.auto_updater:
+                QMessageBox.warning(self, "Not Available", "Auto-updater not initialized yet.")
+                return
+
+            if self.auto_updater.pattern_monitoring_enabled:
+                # Disable monitoring
+                self.auto_updater.disable_pattern_monitoring()
+                self.toggle_monitoring_btn.setText("▶ Enable Monitoring")
+                self.toggle_monitoring_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #C8E6C9;
+                        color: black;
+                        font-weight: bold;
+                        padding: 8px;
+                        border: 1px solid #81C784;
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: #A5D6A7;
+                        border-color: #66BB6A;
+                    }
+                """)
+                self.monitoring_status_label.setText("Status: ⏸ Disabled")
+                self.monitoring_status_label.setStyleSheet("color: gray;")
+            else:
+                # Enable monitoring
+                success = self.auto_updater.enable_pattern_monitoring()
+                if success:
+                    self.toggle_monitoring_btn.setText("⏸ Disable Monitoring")
+                    self.toggle_monitoring_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #FFCDD2;
+                            color: black;
+                            font-weight: bold;
+                            padding: 8px;
+                            border: 1px solid #EF9A9A;
+                            border-radius: 4px;
+                        }
+                        QPushButton:hover {
+                            background-color: #EF9A9A;
+                            border-color: #E57373;
+                        }
+                    """)
+                    self.monitoring_status_label.setText("Status: ✅ Active")
+                    self.monitoring_status_label.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    QMessageBox.warning(self, "Error", "Failed to enable pattern monitoring")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to toggle monitoring: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def updateMonitoringStatus(self):
+        """Update the monitoring status display"""
+        try:
+            if hasattr(self, 'auto_updater') and self.auto_updater:
+                if self.auto_updater.pattern_monitoring_enabled:
+                    self.toggle_monitoring_btn.setText("⏸ Disable Monitoring")
+                    self.toggle_monitoring_btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #FFCDD2;
+                            color: black;
+                            font-weight: bold;
+                            padding: 8px;
+                            border: 1px solid #EF9A9A;
+                            border-radius: 4px;
+                        }
+                        QPushButton:hover {
+                            background-color: #EF9A9A;
+                            border-color: #E57373;
+                        }
+                    """)
+                    self.monitoring_status_label.setText("Status: ✅ Active")
+                    self.monitoring_status_label.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    self.toggle_monitoring_btn.setText("▶ Enable Monitoring")
+                    self.monitoring_status_label.setText("Status: ⏸ Disabled")
+                    self.monitoring_status_label.setStyleSheet("color: gray;")
+            else:
+                self.monitoring_status_label.setText("Status: ⏳ Not initialized")
+                self.monitoring_status_label.setStyleSheet("color: orange;")
+        except Exception as e:
+            print(f"Error updating monitoring status: {e}")
+
+    def openActiveSignals(self):
+        """Open the active signals window"""
+        try:
+            print("Opening Active Signals window...")
+
+            # Get signal database from auto-updater's pattern monitor if available
+            signal_db = None
+            if hasattr(self, 'auto_updater') and self.auto_updater:
+                print(f"Auto-updater found: {self.auto_updater}")
+                if hasattr(self.auto_updater, 'pattern_monitor') and self.auto_updater.pattern_monitor:
+                    print(f"Pattern monitor found: {self.auto_updater.pattern_monitor}")
+                    signal_db = self.auto_updater.pattern_monitor.db
+                    print(f"Signal DB: {signal_db}")
+                else:
+                    print("Pattern monitor not available")
+            else:
+                print("Auto-updater not available")
+
+            # Create and show active signals window
+            print("Creating ActiveSignalsWindow...")
+            self.active_signals_window = ActiveSignalsWindow(signal_db=signal_db, parent=self)
+            print("Showing window...")
+            self.active_signals_window.show()
+            print("Active Signals window opened successfully")
+
+        except Exception as e:
+            error_msg = f"Failed to open Active Signals window: {e}"
+            print(f"❌ {error_msg}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", error_msg)
 
     def openWatchlistManager(self):
         """Open the watchlist manager window"""

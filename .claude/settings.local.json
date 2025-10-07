@@ -42,7 +42,21 @@
       "Bash(dir \"C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\backtest_results\\pattern_charts\")",
       "Bash(dir:*)",
       "Bash(do [ -f \"$file\" ])",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(if exist debug_zone_entry.py del debug_zone_entry.py)",
+      "Bash(del debug_zone_entry.py)",
+      "Bash(tee:*)",
+      "Bash(if exist datasignals.db del datasignals.db)",
+      "Bash(del datasignals.db)",
+      "Bash(if exist \"data\\signals.db\" del \"data\\signals.db\")",
+      "Bash(taskkill:*)",
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "Bash(del \"data\\signals.db\")",
+      "Bash(if exist \"C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\signals.db\" del \"C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\signals.db\")",
+      "Bash(del \"C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\signals.db\")",
+      "Bash(if exist nul del nul)",
+      "Bash(del nul)"
     ],
     "deny": [],
     "ask": []

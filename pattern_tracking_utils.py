@@ -1280,7 +1280,25 @@ class PatternTracker:
                     if not is_duplicate:
                         unique_d_lines.append(d_price)
 
-                # Update tracked pattern
+                # CRITICAL: Validate d_lines against candlestick crossing
+                # Same validation as initial detection in unformed_xabcd.py
+                if unique_d_lines and hasattr(self, 'current_data') and self.current_data is not None:
+                    c_bar = tracked.c_point[0]  # C point bar index
+
+                    # Validate using same logic as unformed_xabcd.py
+                    valid_d_lines = self._validate_d_lines_crossing(
+                        self.current_data, c_bar, unique_d_lines
+                    )
+
+                    if not valid_d_lines:
+                        # All d_lines cross candlesticks - pattern is invalid
+                        # Return False to signal that recalculation failed
+                        return False
+
+                    # Use only valid d_lines
+                    unique_d_lines = valid_d_lines
+
+                # Update tracked pattern with validated d_lines
                 tracked.d_lines = unique_d_lines
 
             elif tracked.pattern_type == 'ABCD':
@@ -1328,6 +1346,55 @@ class PatternTracker:
             import logging
             logging.error(f"Error recalculating PRZ: {e}")
             return False
+
+    def _validate_d_lines_crossing(self, df: pd.DataFrame, c_idx: int, d_lines: List[float]) -> List[float]:
+        """
+        Validate that horizontal D projection lines don't cross any candlesticks after point C.
+        Same logic as validate_d_lines_no_candlestick_crossing() in unformed_xabcd.py
+
+        Args:
+            df: DataFrame with OHLC data
+            c_idx: Index of point C in the DataFrame
+            d_lines: List of projected D price levels
+
+        Returns:
+            List of valid D lines that don't cross candlesticks
+        """
+        if not d_lines or c_idx >= len(df) - 1:
+            return d_lines
+
+        try:
+            import numpy as np
+
+            MAX_FUTURE_CANDLES = 100  # Same as unformed_xabcd.py
+
+            high_col = 'High' if 'High' in df.columns else 'high'
+            low_col = 'Low' if 'Low' in df.columns else 'low'
+
+            # Get candles after point C (limited to MAX_FUTURE_CANDLES)
+            end_idx = min(c_idx + 1 + MAX_FUTURE_CANDLES, len(df))
+            candles_after_c = df.iloc[c_idx + 1:end_idx]
+
+            # Extract arrays for vectorized operations
+            highs = candles_after_c[high_col].values
+            lows = candles_after_c[low_col].values
+
+            valid_d_lines = []
+
+            for d_price in d_lines:
+                # Vectorized check if d_price crosses any candlestick
+                crosses_candle = np.any((lows <= d_price) & (d_price <= highs))
+
+                if not crosses_candle:
+                    valid_d_lines.append(d_price)
+
+            return valid_d_lines
+
+        except (KeyError, IndexError, TypeError) as e:
+            import logging
+            logging.error(f"D line validation failed in pattern tracking: {e}")
+            # Return empty list on error - no D lines are valid if validation fails
+            return []
 
     def update_c_points(self, extremum_points: List[Tuple], current_bar: int) -> List[str]:
         """
@@ -1426,6 +1493,22 @@ class PatternTracker:
 
                     # Recalculate PRZ with new C
                     prz_recalculated = self._recalculate_prz(tracked)
+
+                    if not prz_recalculated:
+                        # PRZ recalculation failed - all d_lines cross candlesticks
+                        # Dismiss this pattern
+                        tracked.status = 'dismissed'
+                        tracked.completion_details['dismissal_reason'] = 'All D-lines cross candlesticks after C update'
+                        tracked.completion_details['dismissal_bar'] = current_bar
+
+                        # Update statistics
+                        pattern_key = f"{tracked.pattern_type}_{tracked.subtype}"
+                        if pattern_key in self.pattern_type_stats:
+                            self.pattern_type_stats[pattern_key]['dismissed'] = \
+                                self.pattern_type_stats[pattern_key].get('dismissed', 0) + 1
+
+                        # Skip adding to updated_patterns since it's now dismissed
+                        continue
 
                     # Mark that C was updated
                     tracked.completion_details['c_updated'] = True

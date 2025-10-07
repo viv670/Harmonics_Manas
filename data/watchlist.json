@@ -3,74 +3,110 @@
     {
       "symbol": "BTCUSDT",
       "timeframe": "1d",
-      "last_update": "2025-10-05T10:51:20.384961",
-      "next_update": "2025-10-06T10:51:20.384961",
+      "last_update": "2025-10-07T06:08:02.620085",
+      "next_update": "2025-10-08T06:08:02.620085",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_1d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "BTCUSDT",
       "timeframe": "2d",
-      "last_update": "2025-10-04T10:45:33.486351",
-      "next_update": "2025-10-06T10:45:33.486351",
+      "last_update": "2025-10-07T06:08:03.022672",
+      "next_update": "2025-10-09T06:08:03.022672",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_2d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "BTCUSDT",
       "timeframe": "3d",
-      "last_update": "2025-10-04T10:45:40.737059",
-      "next_update": "2025-10-07T10:45:40.737059",
+      "last_update": "2025-10-07T06:08:03.385168",
+      "next_update": "2025-10-10T06:08:03.385168",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\btcusdt_3d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "ETHUSDT",
       "timeframe": "3d",
-      "last_update": "2025-10-04T10:45:54.202974",
-      "next_update": "2025-10-07T10:45:54.202974",
+      "last_update": "2025-10-07T06:08:03.738378",
+      "next_update": "2025-10-10T06:08:03.738378",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_3d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "ETHUSDT",
       "timeframe": "2d",
-      "last_update": "2025-10-04T10:46:07.393253",
-      "next_update": "2025-10-06T10:46:07.393253",
+      "last_update": "2025-10-07T06:08:04.587840",
+      "next_update": "2025-10-09T06:08:04.587840",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_2d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "ETHUSDT",
       "timeframe": "1d",
-      "last_update": "2025-10-05T10:51:20.905235",
-      "next_update": "2025-10-06T10:51:20.905235",
+      "last_update": "2025-10-07T06:08:04.979143",
+      "next_update": "2025-10-08T06:08:04.979143",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\ethusdt_1d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "HYPEUSDT",
       "timeframe": "1d",
-      "last_update": "2025-10-05T22:48:29.242053",
-      "next_update": "2025-10-06T22:48:29.242053",
+      "last_update": "2025-10-07T06:08:06.029281",
+      "next_update": "2025-10-08T06:08:06.029281",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\hypeusdt_1d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
       "symbol": "XLMUSDT",
       "timeframe": "1d",
-      "last_update": "2025-10-05T22:55:02.114763",
-      "next_update": "2025-10-06T22:55:02.114763",
+      "last_update": "2025-10-07T06:08:06.438834",
+      "next_update": "2025-10-08T06:08:06.438834",
       "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\xlmusdt_1d.csv",
-      "enabled": true
+      "enabled": true,
+      "monitor_alerts": true
     },
     {
-      "symbol": "HYPEUSDT",
-      "timeframe": "4h",
-      "last_update": "2025-10-05T22:58:27.626391",
-      "next_update": "2025-10-06T02:58:27.626391",
-      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\hypeusdt_4h.csv",
-      "enabled": true
+      "symbol": "BTCUSDT",
+      "timeframe": "12h",
+      "last_update": "2025-10-07T06:08:06.863802",
+      "next_update": "2025-10-07T18:08:06.863802",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\btcusdt_12h.csv",
+      "enabled": true,
+      "monitor_alerts": true
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "8h",
+      "last_update": "2025-10-07T06:08:07.337425",
+      "next_update": "2025-10-07T14:08:07.337425",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\btcusdt_8h.csv",
+      "enabled": true,
+      "monitor_alerts": true
+    },
+    {
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "last_update": "2025-10-07T09:50:22.844449",
+      "next_update": "2025-10-07T10:20:22.844449",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\btcusdt_30m.csv",
+      "enabled": true,
+      "monitor_alerts": true
+    },
+    {
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "last_update": "2025-10-07T09:50:24.299948",
+      "next_update": "2025-10-07T10:20:24.299948",
+      "file_path": "C:\\Users\\vivek\\Desktop\\Harmonics_Manas\\data\\ethusdt_30m.csv",
+      "enabled": true,
+      "monitor_alerts": true
     }
   ]
 }

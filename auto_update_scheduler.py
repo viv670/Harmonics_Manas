@@ -3,15 +3,25 @@ Auto-Update Scheduler
 =====================
 Background service that automatically updates charts based on their timeframes.
 Enhanced with retry logic, configurable intervals, and update history tracking.
+Integrated with pattern monitoring for automated alerts.
 """
 
 import threading
 import time
 from datetime import datetime
 from typing import Callable, Optional
+from concurrent.futures import ThreadPoolExecutor
 from watchlist_manager import WatchlistManager, ChartEntry
 from binance_downloader import BinanceDataDownloader
 from update_history_logger import UpdateHistoryLogger
+
+# Pattern monitoring integration
+try:
+    from pattern_monitor_service import MultiSymbolMonitor
+    PATTERN_MONITORING_AVAILABLE = True
+except ImportError:
+    PATTERN_MONITORING_AVAILABLE = False
+    print("⚠️ Pattern monitoring not available")
 
 
 class AutoUpdateScheduler:
@@ -23,7 +33,8 @@ class AutoUpdateScheduler:
                  retry_delay: int = 60,  # Delay between retries (seconds)
                  progress_callback: Optional[Callable] = None,
                  status_callback: Optional[Callable] = None,
-                 notification_callback: Optional[Callable] = None):
+                 notification_callback: Optional[Callable] = None,
+                 enable_pattern_monitoring: bool = True):
         """
         Initialize the auto-update scheduler
 
@@ -35,6 +46,7 @@ class AutoUpdateScheduler:
             progress_callback: Callback for progress updates (chart, percent, message)
             status_callback: Callback for status updates (message)
             notification_callback: Callback for notifications (title, message, type)
+            enable_pattern_monitoring: Enable automated pattern detection and alerts
         """
         self.watchlist = watchlist_manager
         self.check_interval = check_interval
@@ -60,6 +72,33 @@ class AutoUpdateScheduler:
         # Retry tracking: {(symbol, timeframe): retry_count}
         self._retry_counts = {}
 
+        # Pattern monitoring
+        self.pattern_monitoring_enabled = enable_pattern_monitoring and PATTERN_MONITORING_AVAILABLE
+        self.pattern_monitor = None
+
+        # Thread pool for async pattern monitoring (max 2 concurrent detections)
+        self._pattern_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="PatternMonitor")
+
+        if self.pattern_monitoring_enabled:
+            # Initialize pattern monitor with watchlist
+            # ONLY monitor charts with monitor_alerts=True
+            watchlist_items = [
+                {'symbol': chart.symbol, 'timeframe': chart.timeframe}
+                for chart in self.watchlist.get_all_charts()
+                if chart.enabled and chart.monitor_alerts  # Must have both enabled AND monitor_alerts
+            ]
+            if watchlist_items:
+                # initial_load=True means first scan won't send alerts
+                self.pattern_monitor = MultiSymbolMonitor(
+                    watchlist_items,
+                    initial_load=True
+                )
+                print(f"✅ Pattern monitoring enabled for {len(watchlist_items)} charts (out of {len(self.watchlist.get_all_charts())} total)")
+            else:
+                print("⚠️ No charts selected for pattern monitoring (enable 'Monitor Alerts' checkbox)")
+        else:
+            print("ℹ️ Pattern monitoring disabled")
+
     def start(self):
         """Start the auto-update scheduler"""
         if self.running:
@@ -83,6 +122,11 @@ class AutoUpdateScheduler:
 
         if self._thread:
             self._thread.join(timeout=5)
+
+        # Shutdown pattern monitoring thread pool
+        if hasattr(self, '_pattern_executor'):
+            print("Shutting down pattern monitoring threads...")
+            self._pattern_executor.shutdown(wait=False)
 
         print("Auto-update scheduler stopped")
         self._notify_status("Auto-update scheduler stopped")
@@ -187,13 +231,25 @@ class AutoUpdateScheduler:
                 if self.progress_callback:
                     self.progress_callback(chart, percent, message)
 
+            # Handle custom timeframes that Binance doesn't support
+            # Check if timeframe is valid Binance interval, if not, resample from lower timeframe
+            download_interval, resample_rule = self._get_download_interval(chart.timeframe)
+
+            if resample_rule:
+                print(f"Note: {chart.timeframe} is not a Binance interval, downloading {download_interval} and resampling")
+
             new_df = self.downloader.download_data(
                 symbol=chart.symbol,
-                interval=chart.timeframe,
+                interval=download_interval,
                 start_date=start_date,
                 end_date=end_date,
                 progress_callback=progress_update
             )
+
+            # Resample if needed
+            if resample_rule and new_df is not None and len(new_df) > 0:
+                new_df = self._resample_data(new_df, resample_rule)
+                print(f"Resampled to {chart.timeframe}: {len(new_df)} candles")
 
             if new_df is not None and len(new_df) > 0:
                 # Append or overwrite
@@ -229,6 +285,9 @@ class AutoUpdateScheduler:
 
                 self._notify_status(f"✓ Updated {chart.symbol} {chart.timeframe}")
                 print(f"Successfully updated {chart.symbol} {chart.timeframe}")
+
+                # TRIGGER PATTERN MONITORING after successful update
+                self._run_pattern_monitoring(chart)
 
             else:
                 print(f"No new data for {chart.symbol} {chart.timeframe}")
@@ -278,6 +337,126 @@ class AutoUpdateScheduler:
 
                 self._notify_status(f"✗ Failed to update {chart.symbol} {chart.timeframe} after {self.max_retries} retries")
                 print(f"Gave up on {chart.symbol} {chart.timeframe} after {self.max_retries} retries")
+
+    def _get_download_interval(self, timeframe):
+        """
+        Determine the download interval and resample rule for a given timeframe.
+
+        Returns:
+            tuple: (download_interval, resample_rule)
+                - download_interval: Valid Binance interval to download
+                - resample_rule: Pandas resample rule string (e.g., '2D', '5D') or None if no resampling needed
+        """
+        # Valid Binance intervals
+        valid_intervals = {
+            '1m', '3m', '5m', '15m', '30m',
+            '1h', '2h', '4h', '6h', '8h', '12h',
+            '1d', '3d', '1w', '1M'
+        }
+
+        # If it's already a valid interval, no resampling needed
+        if timeframe in valid_intervals:
+            return timeframe, None
+
+        # Parse custom timeframe to determine base interval and multiplier
+        import re
+        match = re.match(r'^(\d+)([mhdwM])$', timeframe)
+
+        if not match:
+            # If format is not recognized, default to 1d
+            print(f"Warning: Unrecognized timeframe format '{timeframe}', defaulting to 1d")
+            return '1d', None
+
+        multiplier = int(match.group(1))
+        unit = match.group(2)
+
+        # Map to download interval and resample rule
+        if unit == 'm':  # Minutes
+            if multiplier <= 1:
+                return '1m', None
+            elif multiplier <= 3:
+                return '1m', f'{multiplier}min'
+            elif multiplier <= 5:
+                return '1m', f'{multiplier}min'
+            elif multiplier <= 15:
+                return '1m', f'{multiplier}min'
+            elif multiplier <= 30:
+                return '1m', f'{multiplier}min'
+            else:
+                return '1h', f'{multiplier}min'
+
+        elif unit == 'h':  # Hours
+            if multiplier <= 1:
+                return '1h', None
+            elif multiplier <= 2:
+                return '1h', f'{multiplier}H'
+            elif multiplier <= 4:
+                return '1h', f'{multiplier}H'
+            elif multiplier <= 6:
+                return '1h', f'{multiplier}H'
+            elif multiplier <= 8:
+                return '1h', f'{multiplier}H'
+            elif multiplier <= 12:
+                return '1h', f'{multiplier}H'
+            else:
+                return '1d', f'{multiplier}H'
+
+        elif unit == 'd':  # Days
+            if multiplier == 1:
+                return '1d', None
+            elif multiplier <= 3:
+                return '1d', f'{multiplier}D'
+            else:
+                return '1d', f'{multiplier}D'
+
+        elif unit == 'w':  # Weeks
+            if multiplier == 1:
+                return '1w', None
+            else:
+                # Use 1w as base for weekly intervals (more efficient than 1d)
+                return '1w', f'{multiplier}W'
+
+        elif unit == 'M':  # Months
+            if multiplier == 1:
+                return '1M', None
+            else:
+                # Use 1M as base for monthly intervals (more efficient than 1d)
+                return '1M', f'{multiplier}M'
+
+        # Fallback
+        return '1d', None
+
+    def _resample_data(self, df, resample_rule):
+        """
+        Resample OHLCV data to a higher timeframe.
+
+        Args:
+            df: DataFrame with columns [time, open, high, low, close, volume]
+            resample_rule: Pandas resample rule (e.g., '2D', '5H', '10min')
+
+        Returns:
+            Resampled DataFrame
+        """
+        import pandas as pd
+
+        # Make sure time is datetime
+        df['time'] = pd.to_datetime(df['time'])
+        df = df.set_index('time')
+
+        # Resample to specified period
+        # For OHLC data: open=first, high=max, low=min, close=last, volume=sum
+        resampled = df.resample(resample_rule).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+
+        # Reset index to get time back as a column
+        resampled = resampled.reset_index()
+
+        return resampled
 
     def _notify_status(self, message: str):
         """Send status update via callback"""
@@ -351,6 +530,128 @@ class AutoUpdateScheduler:
     def get_chart_history(self, symbol: str, timeframe: str, limit: int = 20):
         """Get update history for specific chart"""
         return self.history_logger.get_records_by_symbol(symbol, timeframe, limit)
+
+    def _run_pattern_monitoring(self, chart: ChartEntry):
+        """
+        Run pattern monitoring after data update (async in separate thread)
+
+        Args:
+            chart: ChartEntry that was just updated
+        """
+        if not self.pattern_monitoring_enabled or not self.pattern_monitor:
+            return
+
+        # Run pattern detection in a separate thread to avoid blocking
+        def monitor_in_thread():
+            try:
+                import pandas as pd
+
+                # Load updated data
+                if not os.path.exists(chart.file_path):
+                    print(f"⚠️ File not found for pattern monitoring: {chart.file_path}")
+                    return
+
+                # Read CSV
+                df = pd.read_csv(chart.file_path)
+
+                # Normalize column names to Title Case
+                df.columns = [col.capitalize() for col in df.columns]
+
+                # Set time index
+                if 'Time' in df.columns:
+                    df['Time'] = pd.to_datetime(df['Time'])
+                    df.set_index('Time', inplace=True)
+                elif 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'])
+                    df.set_index('Date', inplace=True)
+
+                print(f"\n🔍 Running pattern monitoring for {chart.symbol} {chart.timeframe}...")
+
+                # Run pattern monitoring
+                results = self.pattern_monitor.process_update(
+                    symbol=chart.symbol,
+                    timeframe=chart.timeframe,
+                    data=df
+                )
+
+                # Log results
+                if results.get('new_patterns_detected', 0) > 0:
+                    print(f"🎯 {results['new_patterns_detected']} new patterns detected!")
+
+                if results.get('patterns_entered', 0) > 0:
+                    print(f"⚡ {results['patterns_entered']} patterns entered PRZ!")
+
+                if results.get('alerts_sent', 0) > 0:
+                    print(f"🔔 {results['alerts_sent']} alerts sent")
+
+            except Exception as e:
+                print(f"⚠️ Pattern monitoring error for {chart.symbol} {chart.timeframe}: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Submit to thread pool (limited concurrency)
+        self._pattern_executor.submit(monitor_in_thread)
+
+    def enable_pattern_monitoring(self):
+        """Enable pattern monitoring"""
+        if not PATTERN_MONITORING_AVAILABLE:
+            print("❌ Pattern monitoring not available (missing dependencies)")
+            return False
+
+        if not self.pattern_monitor:
+            # Initialize pattern monitor
+            # ONLY monitor charts with monitor_alerts=True
+            watchlist_items = [
+                {'symbol': chart.symbol, 'timeframe': chart.timeframe}
+                for chart in self.watchlist.get_all_charts()
+                if chart.enabled and chart.monitor_alerts
+            ]
+            if watchlist_items:
+                self.pattern_monitor = MultiSymbolMonitor(watchlist_items)
+                print(f"✅ Pattern monitoring enabled for {len(watchlist_items)} charts")
+            else:
+                print("⚠️ No charts selected for pattern monitoring (enable 'Monitor Alerts' checkbox)")
+                return False
+
+        self.pattern_monitoring_enabled = True
+        print("✅ Pattern monitoring enabled")
+        return True
+
+    def disable_pattern_monitoring(self):
+        """Disable pattern monitoring"""
+        self.pattern_monitoring_enabled = False
+        print("ℹ️ Pattern monitoring disabled")
+
+    def rebuild_pattern_monitor(self):
+        """Rebuild pattern monitor based on current watchlist settings"""
+        if not PATTERN_MONITORING_AVAILABLE or not self.pattern_monitoring_enabled:
+            return False
+
+        # Get charts with monitor_alerts=True
+        watchlist_items = [
+            {'symbol': chart.symbol, 'timeframe': chart.timeframe}
+            for chart in self.watchlist.get_all_charts()
+            if chart.enabled and chart.monitor_alerts
+        ]
+
+        if watchlist_items:
+            # Recreate pattern monitor with updated list
+            self.pattern_monitor = MultiSymbolMonitor(
+                watchlist_items,
+                initial_load=False  # Don't suppress alerts on rebuild
+            )
+            print(f"✅ Pattern monitor rebuilt: {len(watchlist_items)} charts (out of {len(self.watchlist.get_all_charts())} total)")
+            return True
+        else:
+            self.pattern_monitor = None
+            print("⚠️ No charts selected for pattern monitoring")
+            return False
+
+    def get_active_signals(self):
+        """Get all active trading signals from pattern monitor"""
+        if not self.pattern_monitor:
+            return []
+        return self.pattern_monitor.get_all_active_signals()
 
 
 # Import for file operations

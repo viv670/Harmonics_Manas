@@ -1,0 +1,51 @@
+================================================================================
+BACKTESTING vs GUI PATTERN DETECTION COMPARISON
+================================================================================
+
+Configuration:
+  Symbol: HYPEUSDT
+  Timeframe: 4h
+  Date range: 2025-03-01 to 2025-10-05
+  Extremum length: 1
+
+Loading data...
+Loaded 774 total bars
+
+================================================================================
+🔄 RUNNING BACKTESTING...
+================================================================================
+Date range: 2025-03-01 to 2025-10-05
+Total bars: 767
+
+Running backtest (this may take a few minutes)...
+Traceback (most recent call last):
+  File "C:\Users\vivek\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas\\_libs\\hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas\\_libs\\hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'High'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\vivek\Desktop\Harmonics_Manas\compare_backtest_vs_gui_patterns.py", line 329, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\vivek\Desktop\Harmonics_Manas\compare_backtest_vs_gui_patterns.py", line 289, in main
+    backtest_result = run_backtesting(full_data, START_DATE, END_DATE)
+  File "C:\Users\vivek\Desktop\Harmonics_Manas\compare_backtest_vs_gui_patterns.py", line 74, in run_backtesting
+    stats = backtester.run_backtest()
+  File "C:\Users\vivek\Desktop\Harmonics_Manas\optimized_walk_forward_backtester.py", line 1158, in run_backtest
+    price_high=current_bar['High'],
+               ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\vivek\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\series.py", line 1121, in __getitem__
+    return self._get_value(key)
+           ~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\vivek\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\series.py", line 1237, in _get_value
+    loc = self.index.get_loc(label)
+  File "C:\Users\vivek\AppData\Local\Programs\Python\Python313\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'High'

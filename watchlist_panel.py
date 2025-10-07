@@ -83,6 +83,9 @@ class WatchlistPanel(QWidget):
 
         self.initUI()
 
+        # Initial data load
+        self.refresh_data()
+
         # Auto-refresh timer
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_data)
@@ -138,9 +141,9 @@ class WatchlistPanel(QWidget):
 
         # Table
         self.watchlist_table = QTableWidget()
-        self.watchlist_table.setColumnCount(7)
+        self.watchlist_table.setColumnCount(8)
         self.watchlist_table.setHorizontalHeaderLabels([
-            "Symbol", "Timeframe", "Enabled", "Last Update", "Next Update",
+            "Symbol", "Timeframe", "Auto-Update", "Monitor Alerts", "Last Update", "Next Update",
             "Status", "Actions"
         ])
         self.watchlist_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -309,26 +312,39 @@ class WatchlistPanel(QWidget):
             # Timeframe
             self.watchlist_table.setItem(row, 1, QTableWidgetItem(chart.timeframe))
 
-            # Enabled checkbox
-            checkbox = QCheckBox()
-            checkbox.setChecked(chart.enabled)
-            checkbox.stateChanged.connect(
+            # Auto-Update checkbox
+            auto_checkbox = QCheckBox()
+            auto_checkbox.setChecked(chart.enabled)
+            auto_checkbox.stateChanged.connect(
                 lambda state, s=chart.symbol, t=chart.timeframe: self.toggle_chart(s, t, state == Qt.CheckState.Checked.value)
             )
-            checkbox_widget = QWidget()
-            checkbox_layout = QHBoxLayout(checkbox_widget)
-            checkbox_layout.addWidget(checkbox)
-            checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            checkbox_layout.setContentsMargins(0, 0, 0, 0)
-            self.watchlist_table.setCellWidget(row, 2, checkbox_widget)
+            auto_checkbox_widget = QWidget()
+            auto_checkbox_layout = QHBoxLayout(auto_checkbox_widget)
+            auto_checkbox_layout.addWidget(auto_checkbox)
+            auto_checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            auto_checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            self.watchlist_table.setCellWidget(row, 2, auto_checkbox_widget)
+
+            # Monitor Alerts checkbox
+            monitor_checkbox = QCheckBox()
+            monitor_checkbox.setChecked(chart.monitor_alerts)
+            monitor_checkbox.stateChanged.connect(
+                lambda state, s=chart.symbol, t=chart.timeframe: self.toggle_monitor_alerts(s, t, state == Qt.CheckState.Checked.value)
+            )
+            monitor_checkbox_widget = QWidget()
+            monitor_checkbox_layout = QHBoxLayout(monitor_checkbox_widget)
+            monitor_checkbox_layout.addWidget(monitor_checkbox)
+            monitor_checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            monitor_checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            self.watchlist_table.setCellWidget(row, 3, monitor_checkbox_widget)
 
             # Last update
             last_update = chart.last_update.strftime("%Y-%m-%d %H:%M")
-            self.watchlist_table.setItem(row, 3, QTableWidgetItem(last_update))
+            self.watchlist_table.setItem(row, 4, QTableWidgetItem(last_update))
 
             # Next update
             next_update = chart.next_update.strftime("%Y-%m-%d %H:%M")
-            self.watchlist_table.setItem(row, 4, QTableWidgetItem(next_update))
+            self.watchlist_table.setItem(row, 5, QTableWidgetItem(next_update))
 
             # Status
             needs_update = chart.needs_update()
@@ -337,12 +353,26 @@ class WatchlistPanel(QWidget):
                 status_item.setForeground(QColor(255, 165, 0))  # Orange
             else:
                 status_item.setForeground(QColor(0, 200, 0))  # Green
-            self.watchlist_table.setItem(row, 5, status_item)
+            self.watchlist_table.setItem(row, 6, status_item)
 
-            # Actions button
-            update_btn = QPushButton("Update Now")
+            # Actions buttons
+            actions_widget = QWidget()
+            actions_layout = QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(2, 2, 2, 2)
+            actions_layout.setSpacing(5)
+
+            # Update button
+            update_btn = QPushButton("Update")
             update_btn.clicked.connect(lambda checked, s=chart.symbol, t=chart.timeframe: self.update_chart(s, t))
-            self.watchlist_table.setCellWidget(row, 6, update_btn)
+            actions_layout.addWidget(update_btn)
+
+            # Delete button
+            delete_btn = QPushButton("Delete")
+            delete_btn.setStyleSheet("QPushButton { background-color: #FFCDD2; color: #C62828; }")
+            delete_btn.clicked.connect(lambda checked, s=chart.symbol, t=chart.timeframe: self.remove_chart(s, t))
+            actions_layout.addWidget(delete_btn)
+
+            self.watchlist_table.setCellWidget(row, 7, actions_widget)
 
     def refresh_history_table(self):
         """Refresh the update history table"""
@@ -484,9 +514,31 @@ class WatchlistPanel(QWidget):
             QMessageBox.information(self, "History Cleared", "Notification history has been cleared.")
 
     def toggle_chart(self, symbol: str, timeframe: str, enabled: bool):
-        """Toggle chart enabled/disabled"""
+        """Toggle chart auto-update enabled/disabled"""
         self.watchlist.enable_chart(symbol, timeframe, enabled)
-        print(f"Chart {symbol} {timeframe} {'enabled' if enabled else 'disabled'}")
+        print(f"Chart {symbol} {timeframe} auto-update {'enabled' if enabled else 'disabled'}")
+
+    def toggle_monitor_alerts(self, symbol: str, timeframe: str, monitor: bool):
+        """Toggle pattern monitoring alerts for a chart"""
+        self.watchlist.set_monitor_alerts(symbol, timeframe, monitor)
+        print(f"Chart {symbol} {timeframe} pattern monitoring {'enabled' if monitor else 'disabled'}")
+
+        # Rebuild pattern monitor to reflect the change
+        if self.auto_updater and hasattr(self.auto_updater, 'rebuild_pattern_monitor'):
+            self.auto_updater.rebuild_pattern_monitor()
+
+            # Show visual feedback
+            monitored_count = len([c for c in self.watchlist.get_all_charts()
+                                  if c.enabled and c.monitor_alerts])
+
+            status_msg = f"{'✅ Enabled' if monitor else '❌ Disabled'} pattern monitoring for {symbol} {timeframe}\n\n"
+            status_msg += f"📊 Currently monitoring {monitored_count} chart{'s' if monitored_count != 1 else ''} for pattern alerts"
+
+            QMessageBox.information(
+                self,
+                "Monitoring Updated",
+                status_msg
+            )
 
     def update_chart(self, symbol: str, timeframe: str):
         """Manually update a specific chart"""
@@ -494,6 +546,40 @@ class WatchlistPanel(QWidget):
             self.auto_updater.update_now(symbol, timeframe)
             QMessageBox.information(self, "Update Started",
                                    f"Updating {symbol} {timeframe}...")
+
+    def remove_chart(self, symbol: str, timeframe: str):
+        """Remove a chart from the watchlist with confirmation"""
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to remove {symbol} {timeframe} from the watchlist?\n\n"
+            f"This will:\n"
+            f"• Stop automatic updates for this chart\n"
+            f"• Remove it from pattern monitoring\n"
+            f"• NOT delete the CSV data file\n",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Remove from watchlist
+            success = self.watchlist.remove_chart(symbol, timeframe)
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Chart Removed",
+                    f"{symbol} {timeframe} has been removed from the watchlist.\n\n"
+                    f"The CSV data file has NOT been deleted and can still be accessed manually."
+                )
+                # Refresh the table
+                self.refresh_watchlist_table()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Removal Failed",
+                    f"Failed to remove {symbol} {timeframe} from watchlist."
+                )
 
     def update_all_charts(self):
         """Manually update all charts"""

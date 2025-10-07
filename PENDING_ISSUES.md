@@ -1,46 +1,6 @@
 # Pending Issues to Resolve
 
-## 1. XABCD Patterns with Empty D-Lines Appearing in Pending Section
-
-**Status**: NOT RESOLVED - Waiting for investigation
-
-**Description**:
-Two XABCD patterns are appearing in the pending section even though their d_lines have failed/are empty:
-- Pattern ID: ABCD_e13109118b515e43 (AB=CD_bear_3_unformed)
-- Pattern ID: XABCD_756cfcd8600b9580 (MaxBat1_bear_unformed)
-
-**Console Output Reference**:
-```
-REJECTED XABCD - MaxBat1_bear_unformed - bar 5 - REASON: No valid D-lines
-...
-Debug output for pending patterns:
-  Pattern ABCD_e13109118b515e43 has d_lines: []
-  Pattern XABCD_756cfcd8600b9580 has d_lines: []
-```
-
-**Current Partial Fix**:
-- Added filtering in `backtesting_dialog.py` lines 1317-1320 to skip XABCD patterns with empty d_lines from chart display
-- Added dismissal logic in `pattern_tracking_utils.py` lines 669-682 to dismiss pending XABCD patterns with empty d_lines during backtesting
-
-**Root Cause to Investigate**:
-Why are XABCD patterns with failed/invalidated d_lines remaining in the pending section instead of being dismissed immediately?
-
-**Next Steps**:
-1. Investigate pattern detection and validation flow
-2. Check when and why d_lines get invalidated/emptied
-3. Ensure patterns are dismissed at the right point in the workflow
-4. Distinguish between ABCD patterns (which use prz_zones) and XABCD patterns (which use d_lines)
-
-**User Comment**: "Lets wait for this one. First fix this - next and previous button" (navigation has been fixed)
-
----
-
-**Date Created**: 2025-10-05
-**DO NOT REMOVE THIS NOTE UNTIL THE ISSUE IS FULLY RESOLVED**
-
----
-
-## 2. Backtesting Dialog X-Axis Date Format Not Updating
+## 1. Backtesting Dialog X-Axis Date Format Not Updating
 
 **Status**: NOT RESOLVED - Low priority
 
@@ -107,7 +67,7 @@ If later needed, "Failed PRZ" can be redefined for patterns that show reversal b
 
 ---
 
-## 4. Remove "Pending" Patterns from Backtesting Completion Analysis
+## 3. Remove "Pending" Patterns from Backtesting Completion Analysis
 
 **Status**: NOT DECIDED - Awaiting user decision
 
@@ -142,7 +102,7 @@ User to decide whether to keep, remove, or rename the "Pending" category in back
 
 ---
 
-## 5. Check if Fibonacci and Harmonic Points are Applied to ABCD Patterns
+## 4. Check if Fibonacci and Harmonic Points are Applied to ABCD Patterns
 
 **Status**: NOT CHECKED - Needs investigation
 
@@ -165,7 +125,7 @@ Are Fibonacci levels and harmonic analysis points being applied correctly to ABC
 
 ---
 
-## 6. Fibonacci Analysis - Define Range and Review Calculation Logic
+## 5. Fibonacci Analysis - Define Range and Review Calculation Logic
 
 **Status**: NEEDS REVIEW - Current behavior produces large candle counts (2500+)
 
@@ -207,7 +167,7 @@ User to decide the optimal range and calculation method for Fibonacci touch anal
 
 ---
 
-## 7. Harmonic Pattern Points Analysis - Review Results and Define Analysis Window
+## 6. Harmonic Pattern Points Analysis - Review Results and Define Analysis Window
 
 **Status**: IMPLEMENTED BUT NEEDS REVIEW - Same issues as Fibonacci analysis
 
@@ -244,7 +204,7 @@ Same problem as Fibonacci analysis - all candle counts are greater than 2500 bec
 - backtesting_dialog.py lines 2342-2615 (Harmonic Points Analysis implementation)
 
 **Related To:**
-- Issue #6 (Fibonacci Analysis) - **IDENTICAL analysis window problem**
+- Issue #5 (Fibonacci Analysis) - **IDENTICAL analysis window problem**
 - Both features need same solution for defining when analysis should stop
 
 **Next Steps**:
@@ -258,38 +218,87 @@ Same problem as Fibonacci analysis - all candle counts are greater than 2500 bec
 
 ---
 
-## 8. Verify All Formed Patterns from GUI Appear in Backtesting "Completed Successfully"
+## 7. Display Historical Fibonacci/Harmonic Statistics in Active Trading Signals
 
-**Status**: NOT VERIFIED - Needs testing
+**Status**: PLANNED - Future enhancement idea
 
-**Question**:
-When a pattern transitions from unformed to formed, does it correctly appear in the backtesting dialog's "✓ Completed Successfully" category?
+**Description**:
+Integrate historical backtesting statistics into the live Active Trading Signals window to provide real-time decision support. When a pattern appears in Active Signals, display historical performance data from backtesting to help users make informed trading decisions.
 
-**Verification Needed**:
-1. **Compare counts**: Check if GUI shows the same number of formed patterns as backtesting "Completed Successfully"
-2. **Pattern transition tracking**: Verify that patterns initially detected as unformed and later becoming formed are properly tracked
-3. **Status update logic**: Confirm that `pattern_tracking_utils.py` correctly updates pattern status from 'pending' to 'success' when formation conditions are met
+**Proposed Features**:
 
-**What to Check**:
-- Run backtest on a symbol/timeframe that has known formed patterns in GUI
-- Compare GUI formed pattern count with backtesting "Completed Successfully" count
-- Check if all pattern IDs from GUI formed patterns exist in backtesting results
-- Verify that patterns aren't being dismissed or lost during unformed → formed transition
+1. **Symbol + Pattern Type Statistics**
+   - Store Fibonacci and Harmonic analysis results by Symbol and Pattern Type
+   - Key format: `{SYMBOL}_{PATTERN}_{DIRECTION}` (e.g., `BTCUSDT_Gartley_bull`)
+   - Save to database or JSON file after each backtest
 
-**Potential Issues**:
-- Patterns might be dismissed before they have a chance to form
-- Status update might not trigger correctly when D point is reached
-- Pattern tracking might lose reference during transition from unformed to formed
+2. **Live Display in Active Signals**
+   - Add column or expandable section showing historical stats
+   - Example display:
+     ```
+     Pattern: BTCUSDT Gartley Bull
+     Historical Data (15 patterns analyzed):
+     - 61.8% Fib: Avg 7.2 crosses (high oscillation - good TP)
+     - Point A: Hit 80% of the time
+     - Point C: Hit 65% of the time
+     - Avg time to completion: 12 candles
+     ```
 
-**Code Locations to Review**:
-- `pattern_tracking_utils.py`: Status update logic for pattern formation
-- `backtesting_dialog.py`: "Completed Successfully" filtering and display logic
-- Pattern detection files: `formed_abcd.py`, `formed_xabcd.py`
+3. **Decision Support Information**
+   - Show which Fibonacci levels have highest crossing frequency → Best TP zones
+   - Show harmonic point hit rates → Probability of retracement
+   - Display sample size (how many historical patterns analyzed)
+   - Color code: Green = high confidence (many samples), Yellow = medium, Red = low samples
 
-**Next Steps**:
-1. Run backtest and compare with GUI pattern counts
-2. If counts don't match, investigate which patterns are missing
-3. Review pattern transition logic in tracking utilities
+4. **Real-Time Context**
+   - User sees pattern forming live
+   - System shows: "Based on 15 historical BTCUSDT Gartley patterns..."
+   - User can decide whether to take trade based on historical performance
+   - No need to switch to backtesting - all info available in monitoring window
 
-**Date Created**: 2025-10-05
-**Priority**: High - affects accuracy and reliability of backtesting results
+**Implementation Steps**:
+1. Create statistics storage system (SQLite table or JSON):
+   - Table: `pattern_statistics`
+   - Columns: symbol, pattern_type, direction, fib_level, avg_crosses, point_hit_rate, sample_count, last_updated
+
+2. Update backtesting to save results:
+   - After Fibonacci/Harmonic analysis completes, save stats to database
+   - Aggregate by symbol + pattern type + direction
+
+3. Query stats when pattern detected:
+   - In Active Signals, when pattern appears, query historical stats
+   - Display in tooltip, expandable row, or dedicated column
+
+4. UI Enhancement options:
+   - Tooltip on hover: Quick stats preview
+   - Expandable row: Click to see detailed breakdown
+   - Separate column: Always visible summary
+   - Side panel: Full historical analysis
+
+**Benefits**:
+- Live trading decisions backed by historical data
+- No manual cross-referencing between backtesting and live monitoring
+- Confidence scores based on sample size
+- Identify which patterns work best for each symbol
+- Spot patterns with high Fibonacci oscillation = optimal TP zones
+
+**Example User Workflow**:
+1. Pattern appears: BTCUSDT Gartley Bull detected
+2. Active Signals shows: "Historical: 61.8% Fib 8.2x crosses (excellent TP), Point A hit 75%"
+3. User sees high oscillation at 61.8% → Sets take profit there
+4. Makes informed decision based on historical performance
+
+**Related Issues**:
+- Issue #5: Fibonacci Analysis (provides source data)
+- Issue #6: Harmonic Points Analysis (provides source data)
+- Both analyses must be completed and refined before this feature
+
+**Dependencies**:
+- Fibonacci crossing analysis must be working correctly
+- Harmonic points analysis must be working correctly
+- Statistics storage system must be designed
+- Active Signals window UI must support additional data display
+
+**Date Created**: 2025-10-06
+**Priority**: Medium-High - Powerful feature for trading decisions, but depends on completing Issues #5 and #6 first
+

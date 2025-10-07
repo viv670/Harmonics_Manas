@@ -15,11 +15,13 @@ class ChartEntry:
     """Represents a single chart in the watchlist"""
 
     def __init__(self, symbol: str, timeframe: str, file_path: str,
-                 last_update: Optional[str] = None, enabled: bool = True):
+                 last_update: Optional[str] = None, enabled: bool = True,
+                 monitor_alerts: bool = False):
         self.symbol = symbol.upper()
         self.timeframe = timeframe
         self.file_path = file_path
-        self.enabled = enabled
+        self.enabled = enabled  # Auto-update enabled/disabled
+        self.monitor_alerts = monitor_alerts  # Pattern monitoring alerts enabled/disabled
 
         # Parse last_update or use current time
         if last_update:
@@ -79,7 +81,8 @@ class ChartEntry:
             'last_update': self.last_update.isoformat(),
             'next_update': self.next_update.isoformat(),
             'file_path': self.file_path,
-            'enabled': self.enabled
+            'enabled': self.enabled,
+            'monitor_alerts': self.monitor_alerts
         }
 
     @classmethod
@@ -90,7 +93,8 @@ class ChartEntry:
             timeframe=data['timeframe'],
             file_path=data['file_path'],
             last_update=data.get('last_update'),
-            enabled=data.get('enabled', True)
+            enabled=data.get('enabled', True),
+            monitor_alerts=data.get('monitor_alerts', False)  # Default False for backward compatibility
         )
 
 
@@ -189,10 +193,19 @@ class WatchlistManager:
         return self.charts.copy()
 
     def enable_chart(self, symbol: str, timeframe: str, enabled: bool = True) -> bool:
-        """Enable or disable a chart"""
+        """Enable or disable auto-updates for a chart"""
         chart = self.find_chart(symbol, timeframe)
         if chart:
             chart.enabled = enabled
+            self.save()
+            return True
+        return False
+
+    def set_monitor_alerts(self, symbol: str, timeframe: str, monitor: bool = True) -> bool:
+        """Enable or disable pattern monitoring alerts for a chart"""
+        chart = self.find_chart(symbol, timeframe)
+        if chart:
+            chart.monitor_alerts = monitor
             self.save()
             return True
         return False

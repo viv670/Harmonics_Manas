@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QTextEdit, QGroupBox, QProgressBar,
     QMessageBox, QCheckBox, QComboBox, QRadioButton, QDateEdit,
-    QButtonGroup, QSplitter, QScrollArea, QFrame
+    QButtonGroup, QSplitter, QScrollArea, QFrame, QLineEdit,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate
 from PyQt6.QtGui import QPixmap
@@ -42,8 +43,8 @@ class DateAxisItem(pg.AxisItem):
                 idx = int(value)
                 if 0 <= idx < len(self.dates):
                     date = self.dates[idx]
-                    # Format date as dd MMM (TradingView style)
-                    strings.append(date.strftime('%d %b'))
+                    # Format date as dd MMM YYYY (TradingView style with year)
+                    strings.append(date.strftime('%d %b %Y'))
                 else:
                     strings.append('')
             except (IndexError, ValueError):
@@ -260,29 +261,24 @@ class BacktestingDialog(QDialog):
         self.initUI()
 
     def loadFullDataset(self):
-        """Load the full dataset directly from file to ensure we have ALL data"""
+        """Use the data passed from GUI (already filtered to the correct date range)"""
         try:
-            import os
-            # Try to load the full btcusdt_1d.csv file directly
-            btc_file = os.path.join(os.path.dirname(__file__), 'btcusdt_1d.csv')
+            # Use the data that was passed to us - it's already the correct range
+            self.full_data = self.data.copy()
 
-            if os.path.exists(btc_file):
-                self.full_data = pd.read_csv(btc_file)
-                # Standardize column names
-                self.full_data.rename(columns={
-                    'time': 'Date',
-                    'open': 'Open',
-                    'high': 'High',
-                    'low': 'Low',
-                    'close': 'Close',
-                    'volume': 'Volume'
-                }, inplace=True)
-                self.full_data['Date'] = pd.to_datetime(self.full_data['Date'])
-                self.full_data.set_index('Date', inplace=True)
-            else:
-                # If file doesn't exist, use whatever data we have
-                self.full_data = self.data
+            # Ensure index is datetime
+            if not isinstance(self.full_data.index, pd.DatetimeIndex):
+                if 'Date' in self.full_data.columns:
+                    self.full_data['Date'] = pd.to_datetime(self.full_data['Date'])
+                    self.full_data.set_index('Date', inplace=True)
+                elif 'time' in self.full_data.columns:
+                    self.full_data['time'] = pd.to_datetime(self.full_data['time'])
+                    self.full_data.set_index('time', inplace=True)
+
+            print(f"✓ Using backtesting data: {len(self.full_data)} bars from {self.full_data.index[0]} to {self.full_data.index[-1]}")
+
         except Exception as e:
+            print(f"Error setting up full dataset: {e}")
             self.full_data = self.data
 
     def initUI(self):
@@ -374,24 +370,21 @@ class BacktestingDialog(QDialog):
         # Pattern Details below chart
         self.pattern_details_text = QTextEdit()
         self.pattern_details_text.setReadOnly(True)
-        self.pattern_details_text.setMaximumHeight(150)
-        self.pattern_details_text.setStyleSheet(
-            "QTextEdit { "
-            "background-color: #f8f9fa; "
-            "border: 1px solid #dee2e6; "
-            "border-radius: 5px; "
-            "padding: 8px; "
-            "font-family: 'Consolas', 'Monaco', monospace; "
-            "font-size: 11px; "
-            "}"
-        )
+        self.pattern_details_text.setMaximumHeight(120)
+        self.pattern_details_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)  # Disable line wrapping to show horizontally
+        # Set larger font size to match pattern viewer
+        font = self.pattern_details_text.font()
+        font.setPointSize(12)
+        self.pattern_details_text.setFont(font)
         self.pattern_details_text.hide()  # Hide initially
         layout.addWidget(self.pattern_details_text)
 
-        # Fibonacci levels toggle (only for successful patterns)
+        # Fibonacci and Harmonic Points toggles (only for successful patterns)
         fib_layout = QHBoxLayout()
+
+        # Fibonacci levels checkbox
         self.show_fib_checkbox = QCheckBox("Show Fibonacci Levels")
-        self.show_fib_checkbox.setChecked(False)
+        self.show_fib_checkbox.setChecked(True)  # Default ON
         self.show_fib_checkbox.stateChanged.connect(self.toggleFibonacciLevels)
         self.show_fib_checkbox.setEnabled(False)  # Disabled until successful pattern is shown
         self.show_fib_checkbox.setToolTip(
@@ -400,6 +393,18 @@ class BacktestingDialog(QDialog):
             "(High for bearish, Low for bullish)"
         )
         fib_layout.addWidget(self.show_fib_checkbox)
+
+        # Harmonic Points checkbox
+        self.show_harmonic_points_checkbox = QCheckBox("Show Harmonic Points (A, B, C)")
+        self.show_harmonic_points_checkbox.setChecked(True)  # Default ON
+        self.show_harmonic_points_checkbox.stateChanged.connect(self.toggleHarmonicPoints)
+        self.show_harmonic_points_checkbox.setEnabled(False)  # Disabled until successful pattern is shown
+        self.show_harmonic_points_checkbox.setToolTip(
+            "Show horizontal lines for harmonic pattern points A, B, and C.\n"
+            "Useful for visualizing price interactions with key pattern levels."
+        )
+        fib_layout.addWidget(self.show_harmonic_points_checkbox)
+
         fib_layout.addStretch()
         layout.addLayout(fib_layout)
 
@@ -696,6 +701,22 @@ class BacktestingDialog(QDialog):
         self.harmonic_points_btn.clicked.connect(self.runHarmonicPointsAnalysis)
         self.harmonic_points_btn.setEnabled(False)  # Enable only when patterns are loaded
         analysis_layout.addWidget(self.harmonic_points_btn)
+
+        # PnL Analysis button
+        self.pnl_analysis_btn = QPushButton("💰 PnL Analysis (Custom)")
+        self.pnl_analysis_btn.setStyleSheet("background-color: #32CD32; color: white; font-weight: bold;")
+        self.pnl_analysis_btn.setToolTip("Calculate Profit & Loss based on entry/exit prices and leverage")
+        self.pnl_analysis_btn.clicked.connect(self.runPnLAnalysis)
+        self.pnl_analysis_btn.setEnabled(False)  # Enable only when patterns are loaded
+        analysis_layout.addWidget(self.pnl_analysis_btn)
+
+        # Enhanced PnL Analysis button (successful patterns only)
+        self.enhanced_pnl_btn = QPushButton("💎 Enhanced PnL (TP1 Strategy)")
+        self.enhanced_pnl_btn.setStyleSheet("background-color: #FFD700; color: black; font-weight: bold;")
+        self.enhanced_pnl_btn.setToolTip("Entry at D, TP1 at first Fib/Point hit, 25% profit, SL to entry\nOnly analyzes successful patterns")
+        self.enhanced_pnl_btn.clicked.connect(self.runEnhancedPnLAnalysis)
+        self.enhanced_pnl_btn.setEnabled(False)  # Enable only when patterns are loaded
+        analysis_layout.addWidget(self.enhanced_pnl_btn)
 
         self.analysis_button_group.setLayout(analysis_layout)
         results_layout.addWidget(self.analysis_button_group)
@@ -1103,6 +1124,8 @@ class BacktestingDialog(QDialog):
                 self.analysis_button_group.setVisible(True)  # Show Pattern Completion Analysis section
                 self.fib_analysis_btn.setEnabled(True)  # Enable Fibonacci Analysis when backtest completes
                 self.harmonic_points_btn.setEnabled(True)  # Enable Harmonic Points Analysis when backtest completes
+                self.pnl_analysis_btn.setEnabled(True)  # Enable PnL Analysis when backtest completes
+                self.enhanced_pnl_btn.setEnabled(True)  # Enable Enhanced PnL Analysis
 
                 self.results_text.append(f"\n  Completed Successfully: {success}")
                 self.results_text.append(f"  Invalid PRZ (Crossed Once): {invalid_prz}")
@@ -1522,6 +1545,10 @@ class BacktestingDialog(QDialog):
             self.fib_analysis_btn.setEnabled(True)
         if hasattr(self, 'harmonic_points_btn'):
             self.harmonic_points_btn.setEnabled(True)
+        if hasattr(self, 'pnl_analysis_btn'):
+            self.pnl_analysis_btn.setEnabled(True)
+        if hasattr(self, 'enhanced_pnl_btn'):
+            self.enhanced_pnl_btn.setEnabled(True)
 
         # Generate and display first chart
         self.generateAndDisplayChart()
@@ -1533,8 +1560,6 @@ class BacktestingDialog(QDialog):
 
         if self.current_chart_index >= len(self.current_category_patterns):
             return
-
-        print(f"📊 generateAndDisplayChart called: index={self.current_chart_index}/{len(self.current_category_patterns)-1}")
 
         try:
             # Get current pattern dictionary
@@ -1597,14 +1622,15 @@ class BacktestingDialog(QDialog):
                     if hasattr(tracked_pattern, 'failed_bar') and tracked_pattern.failed_bar:
                         latest_event_bar = max(latest_event_bar, tracked_pattern.failed_bar)
 
-                    # Show 15-20 candles after the latest event
-                    max_bar = latest_event_bar + 20
+                    # Show ALL candles after the latest event until end of backtest data
+                    max_bar = len(test_data)  # Show everything until end date
 
-            max_bar = min(len(test_data), max_bar)  # Don't exceed data length
+            # max_bar already set to end of data, no need to limit further
 
             # Store for use in coordinate calculations
             self.chart_min_bar = min_bar
             self.chart_max_bar = max_bar
+            self.display_start_idx = min_bar  # For OHLC box bar number calculation
 
             # Get data slice
             display_data = test_data.iloc[min_bar:max_bar]
@@ -1717,10 +1743,15 @@ class BacktestingDialog(QDialog):
                 for x, y, label in zip(x_coords, y_coords, labels):
                     # Get the timestamp for this point from the stored bars
                     point_bar = self.current_pattern_bars.get(label)
-                    if point_bar is None or point_bar >= len(test_data):
+                    if point_bar is None:
                         continue
 
-                    # Get timestamp from test_data
+                    # CRITICAL FIX: Bar indices are relative to test_data (filtered backtest data)
+                    # NOT relative to full_data. Use test_data for correct timestamp lookup.
+                    if point_bar >= len(test_data):
+                        continue
+
+                    # Get timestamp from test_data using bar index (relative to backtest data)
                     point_timestamp = test_data.index[point_bar]
 
                     # Format date/time - only show time if it's not all zeros
@@ -1748,81 +1779,6 @@ class BacktestingDialog(QDialog):
             pattern_id = pattern_dict.get('pattern_id')
 
             # Debug: Show what we're checking
-            print(f"\n=== PRZ/D-lines Debug ===")
-            print(f"Pattern ID: {pattern_id[:30] if pattern_id else 'None'}...")
-            print(f"Pattern Type: {pattern_dict.get('pattern_type')}")
-            print(f"Pattern Subtype: {pattern_dict.get('pattern_subtype')}")
-            print(f"Status: {pattern_dict.get('status')}")
-            print(f"x_coords available: {len(x_coords)}")
-            print(f"Points in dict: {list(points.keys())}")
-
-            if pattern_id and pattern_id in tracker.tracked_patterns:
-                tracked_pattern = tracker.tracked_patterns[pattern_id]
-
-                # Print pattern points with bar numbers and prices
-                print(f"\n--- Pattern Points ---")
-                if hasattr(tracked_pattern, 'x_point') and tracked_pattern.x_point:
-                    bar_idx, price = tracked_pattern.x_point
-                    if bar_idx != 0 or price != 0:
-                        print(f"X: Bar {bar_idx}, Price ${price:,.2f}")
-                if hasattr(tracked_pattern, 'a_point') and tracked_pattern.a_point:
-                    bar_idx, price = tracked_pattern.a_point
-                    print(f"A: Bar {bar_idx}, Price ${price:,.2f}")
-                if hasattr(tracked_pattern, 'b_point') and tracked_pattern.b_point:
-                    bar_idx, price = tracked_pattern.b_point
-                    print(f"B: Bar {bar_idx}, Price ${price:,.2f}")
-                if hasattr(tracked_pattern, 'c_point') and tracked_pattern.c_point:
-                    bar_idx, price = tracked_pattern.c_point
-                    print(f"C: Bar {bar_idx}, Price ${price:,.2f}")
-                if hasattr(tracked_pattern, 'd_point') and tracked_pattern.d_point:
-                    bar_idx, price = tracked_pattern.d_point
-                    print(f"D: Bar {bar_idx}, Price ${price:,.2f}")
-
-                # Print zone entry/exit information
-                print(f"\n--- Zone Entry/Exit ---")
-                if hasattr(tracked_pattern, 'zone_entry_bar') and tracked_pattern.zone_entry_bar:
-                    entry_bar = tracked_pattern.zone_entry_bar
-                    print(f"Zone Entry Bar: {entry_bar}")
-                    print(f"Zone Entry Price: ${tracked_pattern.zone_entry_price:,.2f}")
-
-                    # Calculate bars from point C to entry
-                    if 'C' in points and 'bar' in points['C']:
-                        c_bar = points['C']['bar']
-                        bars_from_c = entry_bar - c_bar
-                        print(f"Bars from Point C (bar {c_bar}) to Entry: {bars_from_c} bars")
-
-                    # Show actual bar data at entry
-                    if entry_bar < len(test_data):
-                        bar_data = test_data.iloc[entry_bar]
-                        print(f"Bar {entry_bar} OHLC: O=${bar_data['Open']:,.2f} H=${bar_data['High']:,.2f} L=${bar_data['Low']:,.2f} C=${bar_data['Close']:,.2f}")
-
-                if hasattr(tracked_pattern, 'reversal_bar') and tracked_pattern.reversal_bar:
-                    print(f"Reversal Bar: {tracked_pattern.reversal_bar}")
-                    print(f"Reversal Price: ${tracked_pattern.reversal_price:,.2f}")
-                if hasattr(tracked_pattern, 'zone_exit_bar') and tracked_pattern.zone_exit_bar:
-                    print(f"Zone Exit Bar: {tracked_pattern.zone_exit_bar}")
-                    print(f"Zone Exit Price: ${tracked_pattern.zone_exit_price:,.2f}")
-
-                # Print PRZ/D-lines
-                print(f"\n--- PRZ/D-lines ---")
-                print(f"Has prz_zones: {hasattr(tracked_pattern, 'prz_zones')}")
-                if hasattr(tracked_pattern, 'prz_zones'):
-                    print(f"prz_zones count: {len(tracked_pattern.prz_zones)}")
-                    print(f"prz_zones value: {tracked_pattern.prz_zones}")
-                print(f"Has all_prz_zones: {hasattr(tracked_pattern, 'all_prz_zones')}")
-                if hasattr(tracked_pattern, 'all_prz_zones'):
-                    print(f"all_prz_zones count: {len(tracked_pattern.all_prz_zones)}")
-                    for i, zone in enumerate(tracked_pattern.all_prz_zones, 1):
-                        zone_min = zone.get('min') or zone.get('zone_min', 0)
-                        zone_max = zone.get('max') or zone.get('zone_max', 0)
-                        print(f"  PRZ {i}: {zone.get('pattern_source')} - {zone_min:.2f} to {zone_max:.2f}")
-                print(f"Has d_lines: {hasattr(tracked_pattern, 'd_lines')}")
-                if hasattr(tracked_pattern, 'd_lines'):
-                    print(f"d_lines value: {tracked_pattern.d_lines}")
-            else:
-                print(f"Pattern not found in tracker!")
-            print(f"========================\n")
-
             if pattern_id and pattern_id in tracker.tracked_patterns:
                 tracked_pattern = tracker.tracked_patterns[pattern_id]
 
@@ -1831,9 +1787,6 @@ class BacktestingDialog(QDialog):
                     last_x = x_coords[-1]
                     is_bullish = points['A']['price'] > points['C']['price']
                     color = '#00BFFF' if is_bullish else '#FF8C00'
-
-                    # Debug
-                    print(f"Drawing D-lines for {pattern_dict.get('pattern_subtype')}: {tracked_pattern.d_lines}")
 
                     # Extend D-lines to the right edge of the chart
                     right_edge = len(display_data) - 1
@@ -1886,9 +1839,7 @@ class BacktestingDialog(QDialog):
                             self.pattern_chart.addItem(text)
 
             # Draw Fibonacci levels if checkbox is checked and pattern is successful
-            print(f"📊 Fib checkbox checked: {self.show_fib_checkbox.isChecked()}, status: {pattern_status}")
             if self.show_fib_checkbox.isChecked() and pattern_status == 'success':
-                print("✅ Drawing Fibonacci levels...")
 
                 # Get pattern points for Fibonacci calculation
                 # For unformed patterns, use zone_entry_price as D
@@ -1905,19 +1856,23 @@ class BacktestingDialog(QDialog):
                     d_price = None
 
                 if a_price and c_price and d_price:
-                    # Determine if bullish or bearish
-                    is_bullish = a_price < c_price
+                    # Determine if bullish or bearish (same logic as pattern drawing)
+                    is_bullish = a_price > c_price  # A > C = bullish (A is high, C is high, D is low)
 
-                    # Calculate start price: max(A,C) for bullish, min(A,C) for bearish
+                    # Calculate Fibonacci levels (same logic as analysis function)
+                    # For BULLISH: 0% at C/A (low), 100% at D (high) - measures upward extension
+                    # For BEARISH: 0% at D (high), 100% at C/A (low) - measures downward retracement
                     if is_bullish:
-                        start_price = max(a_price, c_price)
+                        start_price = max(a_price, c_price)  # 0% at swing high (C or A)
+                        end_price = d_price  # 100% at D (higher)
+                        price_range = end_price - start_price
                     else:
-                        start_price = min(a_price, c_price)
+                        # BEARISH: Retracement FROM D back down
+                        start_price = d_price  # 0% at D (the high where pattern completed)
+                        end_price = min(a_price, c_price)  # 100% back to swing low (C or A)
+                        price_range = end_price - start_price  # Negative range for bearish
 
-                    end_price = d_price
-                    price_range = end_price - start_price
-
-                    # Calculate Fibonacci levels (same logic as backtester)
+                    # Calculate Fibonacci levels
                     fib_percentages = [0, 23.6, 38.2, 50, 61.8, 78.6, 88.6, 100, 112.8, 127.2, 141.4, 161.8]
                     fib_levels = {}
 
@@ -1945,6 +1900,30 @@ class BacktestingDialog(QDialog):
                         fib_text.setFont(QFont('Arial', 10, QFont.Weight.Bold))
                         self.pattern_chart.addItem(fib_text)
 
+            # Draw harmonic point levels (A, B, C) if checkbox is checked and pattern is successful
+            if self.show_harmonic_points_checkbox.isChecked() and pattern_status == 'success':
+                # Use different colors than Fibonacci to distinguish them
+                harmonic_colors = {
+                    'A': '#FF6B6B',  # Red for Point A
+                    'B': '#FF6B6B',  # Red for Point B (same as A for visibility)
+                    'C': '#FF6B6B'   # Red for Point C (same as A for visibility)
+                }
+
+                for point_label in ['A', 'B', 'C']:
+                    if point_label in points and 'price' in points[point_label]:
+                        point_price = points[point_label]['price']
+                        point_color = harmonic_colors[point_label]
+
+                        # Draw horizontal line for this harmonic point
+                        point_pen = mkPen(color=point_color, width=2, style=Qt.PenStyle.SolidLine)
+                        self.pattern_chart.plot([0, len(display_data)-1], [point_price, point_price], pen=point_pen)
+
+                        # Add label on the left side (to differentiate from Fib labels on right)
+                        point_text = pg.TextItem(f"Point {point_label}", color=point_color, anchor=(1, 0.5))
+                        point_text.setPos(5, point_price)  # Left side at position 5
+                        point_text.setFont(QFont('Arial', 10, QFont.Weight.Bold))
+                        self.pattern_chart.addItem(point_text)
+
             # Set title
             pattern_type = pattern_dict.get('pattern_type', 'Unknown')
             pattern_subtype = pattern_dict.get('pattern_subtype', 'Unknown')
@@ -1968,9 +1947,12 @@ class BacktestingDialog(QDialog):
 
             if pattern_status == 'success' and (has_d_point or has_zone_entry):
                 self.show_fib_checkbox.setEnabled(True)
+                self.show_harmonic_points_checkbox.setEnabled(True)
             else:
                 self.show_fib_checkbox.setEnabled(False)
                 self.show_fib_checkbox.setChecked(False)  # Uncheck if disabled
+                self.show_harmonic_points_checkbox.setEnabled(False)
+                self.show_harmonic_points_checkbox.setChecked(False)  # Uncheck if disabled
 
             # Set x-axis labels to show dates
             axis = self.pattern_chart.getAxis('bottom')
@@ -2036,22 +2018,45 @@ class BacktestingDialog(QDialog):
     def updatePatternDetails(self, pattern_dict):
         """Update pattern details text - similar to GUI's updateDetails"""
         try:
-            # Get pattern info
-            pattern_name = pattern_dict.get('name', 'Unknown Pattern')
+            # Get pattern info from tracked pattern if available
+            pattern_id = pattern_dict.get('pattern_id')
+            tracked = None
+            if pattern_id and hasattr(self.last_backtester, 'pattern_tracker'):
+                tracker = self.last_backtester.pattern_tracker
+                if pattern_id in tracker.tracked_patterns:
+                    tracked = tracker.tracked_patterns[pattern_id]
+
+            # Get pattern name from tracked pattern or fall back to pattern_dict
+            if tracked:
+                pattern_type = tracked.pattern_type
+                subtype = tracked.subtype
+                # Build proper pattern name
+                if pattern_type == 'ABCD':
+                    # Determine bull/bear from points
+                    points = pattern_dict.get('points', {})
+                    if 'A' in points and 'B' in points:
+                        is_bull = points['B']['price'] < points['A']['price']
+                        direction = 'Bull' if is_bull else 'Bear'
+                    else:
+                        direction = ''
+                    pattern_name = f"ABCD {direction} {subtype}".strip()
+                else:  # XABCD
+                    pattern_name = subtype  # Gartley, Butterfly, etc.
+            else:
+                pattern_name = pattern_dict.get('name', 'Unknown Pattern')
+                # Clean up pattern name
+                if 'AB=CD_bull_' in pattern_name:
+                    pattern_name = 'ABCD Bull ' + pattern_name.replace('AB=CD_bull_', '').replace('_unformed', '').replace('_formed', '')
+                elif 'AB=CD_bear_' in pattern_name:
+                    pattern_name = 'ABCD Bear ' + pattern_name.replace('AB=CD_bear_', '').replace('_unformed', '').replace('_formed', '')
+                else:
+                    pattern_name = pattern_name.replace('_unformed', '').replace('_formed', '')
+
             points = pattern_dict.get('points', {})
 
             # Build details text
             details = ""
-
-            # Pattern name header
-            if 'AB=CD_bull_' in pattern_name:
-                clean_name = 'ABCD Bull ' + pattern_name.replace('AB=CD_bull_', '').replace('_unformed', '').replace('_formed', '')
-            elif 'AB=CD_bear_' in pattern_name:
-                clean_name = 'ABCD Bear ' + pattern_name.replace('AB=CD_bear_', '').replace('_unformed', '').replace('_formed', '')
-            else:
-                clean_name = pattern_name.replace('_unformed', '').replace('_formed', '')
-
-            details += f"📊 {clean_name}\n\n"
+            details += f"📊 {pattern_name}\n\n"
 
             # Determine point order based on pattern type
             if 'X' in points:
@@ -2062,22 +2067,34 @@ class BacktestingDialog(QDialog):
             if 'D' in points:
                 point_names.append('D')
 
-            # Show points with prices and dates
+            # Show points with prices and dates (including year)
             point_values = []
+            # CRITICAL: Get test_data from backtester (filtered data used for backtest)
+            test_data = self.last_backtester.data if hasattr(self, 'last_backtester') and self.last_backtester else None
+
             for point_name in point_names:
                 if point_name in points and 'price' in points[point_name]:
                     price = points[point_name]['price']
                     bar = points[point_name].get('bar')
 
-                    # Get timestamp from full_data if available
+                    # Get timestamp from test_data (NOT full_data)
+                    # Bar indices are relative to the backtested data range
                     time_str = ""
-                    if bar is not None and self.full_data is not None and 0 <= bar < len(self.full_data):
-                        point_time = self.full_data.index[bar]
-                        if hasattr(point_time, 'strftime'):
+                    if bar is not None and test_data is not None and 0 <= bar < len(test_data):
+                        try:
+                            point_time = test_data.index[bar]
+
+                            # Ensure it's a datetime object
+                            if not hasattr(point_time, 'strftime'):
+                                point_time = pd.to_datetime(point_time)
+
                             if point_time.hour == 0 and point_time.minute == 0:
-                                time_str = f"@{point_time.strftime('%d %b')}"
+                                time_str = f"@{point_time.strftime('%d %b %Y')}"
                             else:
-                                time_str = f"@{point_time.strftime('%d %b %H:%M')}"
+                                time_str = f"@{point_time.strftime('%d %b %Y %H:%M')}"
+                        except Exception as e:
+                            print(f"Error formatting time for {point_name} at bar {bar}: {e}")
+                            time_str = ""
 
                     point_values.append(f"{point_name}=${price:.2f}{time_str}")
 
@@ -2108,11 +2125,17 @@ class BacktestingDialog(QDialog):
                 if ratio_values:
                     details += "Ratios: " + "  •  ".join(ratio_values) + "\n\n"
 
-            # Show PRZ zones for ABCD patterns
-            if 'prz_zones' in pattern_dict and 'X' not in points:
+            # Show ALL PRZ zones for ABCD patterns (use all_prz_zones from tracked pattern if available)
+            prz_zones_to_show = []
+            if tracked and hasattr(tracked, 'all_prz_zones') and tracked.all_prz_zones:
+                prz_zones_to_show = tracked.all_prz_zones
+            elif 'prz_zones' in pattern_dict:
+                prz_zones_to_show = pattern_dict['prz_zones']
+
+            if prz_zones_to_show and 'X' not in points:
                 prz_list = []
                 proj_list = []
-                for i, zone in enumerate(pattern_dict['prz_zones'], 1):
+                for i, zone in enumerate(prz_zones_to_show, 1):
                     prz_list.append(f"{i}:${zone['min']:.2f}-${zone['max']:.2f}")
                     if 'proj_min' in zone and 'proj_max' in zone:
                         proj_list.append(f"{zone['proj_min']:.1f}%-{zone['proj_max']:.1f}%")
@@ -2122,38 +2145,92 @@ class BacktestingDialog(QDialog):
                     prz_str += "\nProjections: " + "  •  ".join(proj_list)
                 details += prz_str + "\n\n"
 
-            # Show D-lines for XABCD patterns
-            if 'd_lines' in pattern_dict and 'X' in points:
-                d_lines = pattern_dict['d_lines']
-                if 'D' in points:
-                    # Formed pattern
-                    details += f"D Lines (Formed XABCD - {len(d_lines)} lines):\n"
-                else:
-                    # Unformed pattern
-                    details += f"D Projections (Unformed XABCD - {len(d_lines)} lines):\n"
+            # Show D-lines for XABCD patterns (from tracked pattern if available)
+            d_lines_to_show = []
+            if tracked and hasattr(tracked, 'd_lines') and tracked.d_lines:
+                d_lines_to_show = tracked.d_lines
+            elif 'd_lines' in pattern_dict:
+                d_lines_to_show = pattern_dict['d_lines']
 
-                for i, d_price in enumerate(d_lines[:6], 1):  # Show first 6
+            if d_lines_to_show and 'X' in points:
+                if 'D' in points:
+                    # Formed pattern - get D point timestamp
+                    d_bar = points['D'].get('bar')
+                    d_time_str = ""
+                    if d_bar is not None and test_data is not None and 0 <= d_bar < len(test_data):
+                        d_time = test_data.index[d_bar]
+                        if hasattr(d_time, 'strftime'):
+                            if d_time.hour == 0 and d_time.minute == 0:
+                                d_time_str = d_time.strftime('%d %b %Y')
+                            else:
+                                d_time_str = d_time.strftime('%d %b %Y %H:%M')
+
+                    if d_time_str:
+                        details += f"D Lines ({len(d_lines_to_show)} lines, at D @ {d_time_str}):\n"
+                    else:
+                        details += f"D Lines (Formed XABCD - {len(d_lines_to_show)} lines):\n"
+                else:
+                    # Unformed pattern - get C point timestamp
+                    c_bar = points['C'].get('bar')
+                    c_time_str = ""
+                    if c_bar is not None and test_data is not None and 0 <= c_bar < len(test_data):
+                        c_time = test_data.index[c_bar]
+                        if hasattr(c_time, 'strftime'):
+                            if c_time.hour == 0 and c_time.minute == 0:
+                                c_time_str = c_time.strftime('%d %b %Y')
+                            else:
+                                c_time_str = c_time.strftime('%d %b %Y %H:%M')
+
+                    if c_time_str:
+                        details += f"D Projections ({len(d_lines_to_show)} lines, from C @ {c_time_str}):\n"
+                    else:
+                        details += f"D Projections ({len(d_lines_to_show)} lines):\n"
+
+                for i, d_price in enumerate(d_lines_to_show, 1):
                     details += f"  D{i}: ${d_price:.2f}\n"
-                if len(d_lines) > 6:
-                    details += f"  ... and {len(d_lines)-6} more\n"
                 details += "\n"
 
             # Show tracking status if available
-            pattern_id = pattern_dict.get('pattern_id')
-            if pattern_id and hasattr(self.last_backtester, 'pattern_tracker'):
-                tracker = self.last_backtester.pattern_tracker
-                if pattern_id in tracker.tracked_patterns:
-                    tracked = tracker.tracked_patterns[pattern_id]
+            if tracked:
+                details += "Tracking Info:\n"
+                details += f"Status: {tracked.status}\n"
 
-                    details += "Tracking Info:\n"
-                    details += f"Status: {tracked.status}\n"
+                if tracked.zone_entry_bar:
+                    zone_entry_bar = tracked.zone_entry_bar
+                    details += f"Zone Entry: Bar {zone_entry_bar}"
 
-                    if tracked.zone_entry_bar:
-                        details += f"Zone Entry: Bar {tracked.zone_entry_bar}\n"
-                    if tracked.reversal_bar:
-                        details += f"Reversal: Bar {tracked.reversal_bar}\n"
-                    if tracked.zone_exit_bar:
-                        details += f"Zone Exit: Bar {tracked.zone_exit_bar}\n"
+                    # Add date for zone entry - use test_data not full_data
+                    if test_data is not None and 0 <= zone_entry_bar < len(test_data):
+                        try:
+                            zone_time = test_data.index[zone_entry_bar]
+                            if not hasattr(zone_time, 'strftime'):
+                                zone_time = pd.to_datetime(zone_time)
+                            zone_date_str = zone_time.strftime('%d %b %Y')
+                            details += f" ({zone_date_str})"
+                        except:
+                            pass
+
+                    details += f" @ ${tracked.zone_entry_price:,.2f}\n"
+
+                if tracked.reversal_bar:
+                    reversal_bar = tracked.reversal_bar
+                    details += f"Reversal: Bar {reversal_bar}"
+
+                    # Add date for reversal - use test_data not full_data
+                    if test_data is not None and 0 <= reversal_bar < len(test_data):
+                        try:
+                            rev_time = test_data.index[reversal_bar]
+                            if not hasattr(rev_time, 'strftime'):
+                                rev_time = pd.to_datetime(rev_time)
+                            rev_date_str = rev_time.strftime('%d %b %Y')
+                            details += f" ({rev_date_str})"
+                        except:
+                            pass
+
+                    details += f" @ ${tracked.reversal_price:,.2f}\n"
+
+                if tracked.zone_exit_bar:
+                    details += f"Zone Exit: Bar {tracked.zone_exit_bar}\n"
 
             # Set text and show widget
             self.pattern_details_text.setPlainText(details.strip())
@@ -2167,12 +2244,15 @@ class BacktestingDialog(QDialog):
 
     def toggleFibonacciLevels(self):
         """Toggle Fibonacci levels on/off and redraw chart"""
-        print(f"🔄 Fibonacci checkbox toggled: {self.show_fib_checkbox.isChecked()}")
         if hasattr(self, 'current_category_patterns') and self.current_category_patterns:
             # Redraw current chart with/without Fibonacci levels
             self.generateAndDisplayChart()
-        else:
-            print("⚠️ No patterns available to redraw")
+
+    def toggleHarmonicPoints(self):
+        """Toggle Harmonic Points (A, B, C) on/off and redraw chart"""
+        if hasattr(self, 'current_category_patterns') and self.current_category_patterns:
+            # Redraw current chart with/without Harmonic Points
+            self.generateAndDisplayChart()
 
     def runFibonacciAnalysis(self):
         """Analyze Fibonacci level touches for current loaded patterns"""
@@ -2209,8 +2289,13 @@ class BacktestingDialog(QDialog):
             )
             return
 
-        # Get tracker
+        # Get tracker and backtesting data
         tracker = self.last_backtester.pattern_tracker if hasattr(self, 'last_backtester') else None
+        backtest_data = self.last_backtester.data if hasattr(self, 'last_backtester') else None
+
+        if backtest_data is None:
+            QMessageBox.warning(self, "No Data", "Backtesting data not available.")
+            return
 
         # Use the selected successful patterns
         patterns_to_analyze = self.current_category_patterns
@@ -2255,8 +2340,6 @@ class BacktestingDialog(QDialog):
                 points = pattern_dict.get('points', {})
                 pattern_id = pattern_dict.get('pattern_id')
 
-                print(f"\n🔍 Pattern {idx}: ID={pattern_id}, Points={list(points.keys())}")
-
                 # Get A, C, D prices
                 a_price = points.get('A', {}).get('price') if 'A' in points else None
                 c_price = points.get('C', {}).get('price') if 'C' in points else None
@@ -2265,95 +2348,116 @@ class BacktestingDialog(QDialog):
                 d_price = None
                 if 'D' in points:
                     d_price = points['D']['price']
-                    print(f"   Using D from points: {d_price:.2f}")
                 elif pattern_id and tracker and pattern_id in tracker.tracked_patterns:
                     d_price = tracker.tracked_patterns[pattern_id].zone_entry_price
-                    print(f"   Using zone_entry_price as D: {d_price}")
 
                 if not all([a_price, c_price, d_price]):
                     print(f"⚠️ Pattern {idx}: Missing price data - A:{a_price}, C:{c_price}, D:{d_price}")
                     continue
 
-                # Determine direction
-                is_bullish = a_price < c_price
+                # Determine direction (same logic as chart drawing)
+                is_bullish = a_price > c_price  # A > C = bullish
 
                 # Calculate Fibonacci levels
+                # For BULLISH: 0% at C/A (low), 100% at D (high) - measures upward extension
+                # For BEARISH: 0% at D (high), 100% at C/A (low) - measures downward retracement
                 if is_bullish:
-                    start_price = max(a_price, c_price)
+                    start_price = max(a_price, c_price)  # 0% at swing high (C or A)
+                    end_price = d_price  # 100% at D (higher)
+                    price_range = end_price - start_price
                 else:
-                    start_price = min(a_price, c_price)
+                    # BEARISH: Retracement FROM D back down
+                    start_price = d_price  # 0% at D (the high where pattern completed)
+                    end_price = min(a_price, c_price)  # 100% back to swing low (C or A)
+                    price_range = end_price - start_price  # Negative range for bearish
 
-                end_price = d_price
-                price_range = end_price - start_price
-
-                print(f"✓ Pattern {idx}: A={a_price:.2f}, C={c_price:.2f}, D={d_price:.2f}, Range={price_range:.2f}, Bullish={is_bullish}")
-
+                # Calculate Fibonacci levels
                 fib_levels = {}
                 for pct in fib_percentages:
                     level_price = start_price + (price_range * pct / 100.0)
                     fib_levels[f"{pct}%"] = level_price
 
-                # Get data after pattern SUCCESS (zone entry + reversal)
-                # For successful patterns, analyze from reversal point, not C point
-                if tracked_pattern.reversal_bar:
-                    start_bar = tracked_pattern.reversal_bar
-                    print(f"  Using reversal_bar: {start_bar}")
-                elif tracked_pattern.zone_entry_bar:
-                    start_bar = tracked_pattern.zone_entry_bar
-                    print(f"  Using zone_entry_bar: {start_bar}")
-                else:
-                    c_bar = tracked_pattern.c_point[0] if tracked_pattern.c_point else None
-                    if not c_bar:
-                        print(f"  ⚠️ No start bar found!")
+                # Get data after D point (when pattern completes)
+                # This gives us maximum candles for analysis
+                d_bar = tracked_pattern.zone_entry_bar if tracked_pattern.zone_entry_bar else None
+                if not d_bar:
+                    # Fallback to actual D point if available
+                    if 'D' in points and 'index' in points['D']:
+                        d_bar = points['D']['index']
+                    elif tracked_pattern.actual_d_bar:
+                        d_bar = tracked_pattern.actual_d_bar
+                    else:
+                        print(f"  ⚠️ No D bar found!")
                         continue
-                    start_bar = c_bar
-                    print(f"  Using C point bar: {start_bar}")
 
-                display_data = self.full_data.iloc[start_bar:].copy().reset_index(drop=True)
-
-                print(f"  Start bar: {start_bar}, Data after: {len(display_data)} candles")
-                print(f"  DEBUG: display_data index range: {display_data.index.min()} to {display_data.index.max()}")
+                display_data = backtest_data.iloc[d_bar:].copy().reset_index(drop=True)
 
                 if display_data.empty:
                     print(f"  ⚠️ No data after formation!")
                     continue
 
-                # Track which levels were touched and when (for this pattern)
-                pattern_fib_touches = {f"{pct}%": None for pct in fib_percentages}
-                touches_found = 0
+                # Track how many times price crosses each Fibonacci level (for this pattern)
+                pattern_fib_crosses = {f"{pct}%": 0 for pct in fib_percentages}
+                total_crosses = 0
+                pattern_completed = False  # Flag to mark pattern as completed when 161.8% hit
+
+                # Check if 161.8% level is hit first (pattern completion condition)
+                level_161_8 = fib_levels.get('161.8%')
+                stop_at_candle = len(display_data)  # Default: analyze all candles
+
+                if level_161_8:
+                    # Find first candle that touches 161.8% level
+                    for candle_idx in range(len(display_data)):
+                        candle = display_data.iloc[candle_idx]
+                        # Check if candle touched 161.8% (low <= level <= high)
+                        if candle['Low'] <= level_161_8 <= candle['High']:
+                            stop_at_candle = candle_idx + 1  # Include this candle
+                            pattern_completed = True
+                            print(f"    🎯 161.8% Fib hit at candle {candle_idx} - Pattern COMPLETED, stopping analysis")
+                            break
 
                 for level_name, level_price in fib_levels.items():
                     # Stop at 161.8%
                     if float(level_name.rstrip('%')) > 161.8:
                         break
 
-                    # Iterate through candles with proper index
-                    for candle_idx in range(len(display_data)):
+                    # Track touches: count every time candle wick touches the level
+                    touches = 0
+                    touch_details = []  # Store touch info for debug
+
+                    # Only analyze up to stop_at_candle (either all candles or where 161.8% was hit)
+                    for candle_idx in range(min(stop_at_candle, len(display_data))):
                         candle = display_data.iloc[candle_idx]
-                        # Check if candle touched this level (exact: Low <= level <= High)
+
+                        # Check if candle touched this level (low <= level <= high)
                         if candle['Low'] <= level_price <= candle['High']:
-                            # Update combined stats
-                            fib_stats[level_name]['touched'] += 1
-                            fib_stats[level_name]['total_candles'] += candle_idx + 1
-                            fib_stats[level_name]['touches'].append(candle_idx + 1)
+                            touches += 1
+                            touch_details.append({
+                                'candle': candle_idx,
+                                'low': candle['Low'],
+                                'high': candle['High'],
+                                'close': candle['Close']
+                            })
 
-                            # Update individual pattern stats
-                            pattern_fib_touches[level_name] = candle_idx + 1
+                    # Update stats for this level
+                    if touches > 0:
+                        fib_stats[level_name]['touched'] += 1  # Pattern touched this level
+                        fib_stats[level_name]['total_candles'] += touches  # Now stores total touches
+                        fib_stats[level_name]['touches'].append(touches)
 
-                            touches_found += 1
-                            print(f"    ✓✓✓ NEW CODE: {level_name} touched at candle_idx={candle_idx}, storing={candle_idx + 1}")
-                            break  # Only count first touch
+                        # Update individual pattern stats
+                        pattern_fib_crosses[level_name] = touches
+                        total_crosses += touches
 
                 # Store individual pattern result
                 individual_pattern_results.append({
                     'pattern_id': pattern_id,
                     'pattern_type': tracked_pattern.pattern_type,
                     'pattern_subtype': tracked_pattern.subtype,
-                    'fib_touches': pattern_fib_touches,
-                    'total_touches': touches_found
+                    'fib_crosses': pattern_fib_crosses,
+                    'total_crosses': total_crosses
                 })
 
-                print(f"  Total touches found: {touches_found}")
                 total_patterns_analyzed += 1
 
             except Exception as e:
@@ -2366,8 +2470,84 @@ class BacktestingDialog(QDialog):
 
         print(f"\n📊 Analysis complete: {total_patterns_analyzed} patterns analyzed")
 
+        # Save statistics to database for Active Trading Signals
+        self.saveFibonacciStatistics(fib_stats, total_patterns_analyzed, individual_pattern_results)
+
         # Generate results display
         self.showFibonacciAnalysisResults(fib_stats, total_patterns_analyzed, individual_pattern_results, category_name)
+
+    def saveFibonacciStatistics(self, fib_stats, total_patterns, individual_results):
+        """Save Fibonacci analysis statistics to database for use in Active Trading Signals"""
+        try:
+            from signal_database import SignalDatabase
+
+            db = SignalDatabase()
+
+            # Get symbol and timeframe from backtester
+            if not hasattr(self, 'last_backtester'):
+                return
+
+            symbol = getattr(self.last_backtester, 'symbol', 'UNKNOWN')
+            timeframe = getattr(self.last_backtester, 'timeframe', 'UNKNOWN')
+
+            # Group patterns by type and direction
+            pattern_groups = {}
+
+            for result in individual_results:
+                pattern_type = result['pattern_type']
+                pattern_name = result.get('pattern_subtype', result['pattern_type'])
+                direction = 'bullish' if result.get('is_bullish', True) else 'bearish'
+
+                key = (pattern_type, pattern_name, direction)
+
+                if key not in pattern_groups:
+                    pattern_groups[key] = []
+
+                pattern_groups[key].append(result)
+
+            # Calculate and save statistics for each group
+            for (pattern_type, pattern_name, direction), patterns in pattern_groups.items():
+                sample_count = len(patterns)
+
+                # Aggregate Fibonacci level statistics
+                fib_aggregated = {}
+
+                for pattern in patterns:
+                    fib_crosses = pattern.get('fib_crosses', {})
+
+                    for level_name, touches in fib_crosses.items():
+                        if level_name not in fib_aggregated:
+                            fib_aggregated[level_name] = {'hit_count': 0, 'total_touches': 0}
+
+                        if touches > 0:
+                            fib_aggregated[level_name]['hit_count'] += 1
+                            fib_aggregated[level_name]['total_touches'] += touches
+
+                # Save each Fibonacci level statistic
+                for level_name, data in fib_aggregated.items():
+                    hit_percentage = (data['hit_count'] / sample_count * 100) if sample_count > 0 else 0
+                    avg_touches = (data['total_touches'] / data['hit_count']) if data['hit_count'] > 0 else 0
+
+                    db.upsert_pattern_statistic(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        pattern_type=pattern_type,
+                        pattern_name=pattern_name,
+                        direction=direction,
+                        stat_type='fibonacci',
+                        level_name=level_name,
+                        patterns_hit=data['hit_count'],
+                        hit_percentage=hit_percentage,
+                        avg_touches=avg_touches,
+                        sample_count=sample_count
+                    )
+
+            print(f"✅ Saved Fibonacci statistics for {len(pattern_groups)} pattern groups")
+
+        except Exception as e:
+            print(f"⚠️ Error saving Fibonacci statistics: {e}")
+            import traceback
+            traceback.print_exc()
 
     def showFibonacciAnalysisResults(self, fib_stats, total_patterns, individual_results, category_name="UNKNOWN"):
         """Display Fibonacci analysis results in a dialog"""
@@ -2393,7 +2573,7 @@ class BacktestingDialog(QDialog):
         # === TAB 1: COMBINED ANALYSIS TABLE ===
         combined_table = QTableWidget()
         combined_table.setColumnCount(4)
-        combined_table.setHorizontalHeaderLabels(["Fib Level", "Times Touched", "Touch %", "Avg Candles"])
+        combined_table.setHorizontalHeaderLabels(["Fib Level", "Patterns Hit", "Hit %", "Avg Touches"])
 
         # Set font
         font = QFont("Arial", 14)
@@ -2405,24 +2585,24 @@ class BacktestingDialog(QDialog):
 
         for row, level_name in enumerate(fib_levels):
             stat = fib_stats[level_name]
-            times_touched = stat['touched']
-            touch_percentage = (times_touched / total_patterns * 100) if total_patterns > 0 else 0
-            avg_candles = (stat['total_candles'] / times_touched) if times_touched > 0 else 0
+            patterns_hit = stat['touched']  # Number of patterns that hit this level
+            hit_percentage = (patterns_hit / total_patterns * 100) if total_patterns > 0 else 0
+            avg_touches = (stat['total_candles'] / patterns_hit) if patterns_hit > 0 else 0
 
             # Create table items
             level_item = QTableWidgetItem(level_name)
-            touched_item = QTableWidgetItem(str(times_touched))
-            percentage_item = QTableWidgetItem(f"{touch_percentage:.1f}%")
-            avg_item = QTableWidgetItem(f"{avg_candles:.1f}")
+            hit_item = QTableWidgetItem(str(patterns_hit))
+            percentage_item = QTableWidgetItem(f"{hit_percentage:.1f}%")
+            avg_item = QTableWidgetItem(f"{avg_touches:.1f}")
 
             # Center align all items
             level_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            touched_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            hit_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             percentage_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             avg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             combined_table.setItem(row, 0, level_item)
-            combined_table.setItem(row, 1, touched_item)
+            combined_table.setItem(row, 1, hit_item)
             combined_table.setItem(row, 2, percentage_item)
             combined_table.setItem(row, 3, avg_item)
 
@@ -2434,11 +2614,11 @@ class BacktestingDialog(QDialog):
         # === TAB 2: INDIVIDUAL PATTERNS TABLE ===
         individual_table = QTableWidget()
         individual_table.setColumnCount(4)
-        individual_table.setHorizontalHeaderLabels(["Pattern", "Pattern Type", "Fib Level", "Candle #"])
+        individual_table.setHorizontalHeaderLabels(["Pattern", "Pattern Type", "Fib Level", "Touches"])
         individual_table.setFont(font)
 
         # Count total rows needed
-        total_rows = sum(len([fib for fib, candle in result['fib_touches'].items() if candle is not None])
+        total_rows = sum(len([fib for fib, crosses in result['fib_crosses'].items() if crosses > 0])
                         for result in individual_results)
         individual_table.setRowCount(total_rows)
 
@@ -2447,11 +2627,11 @@ class BacktestingDialog(QDialog):
             pattern_name = f"#{idx}: {result['pattern_subtype']}"
             pattern_type = result['pattern_type']
 
-            # Get all touched levels
-            touched_levels = [(level, candle) for level, candle in sorted(result['fib_touches'].items(),
-                             key=lambda x: float(x[0].rstrip('%'))) if candle is not None]
+            # Get all crossed levels
+            crossed_levels = [(level, crosses) for level, crosses in sorted(result['fib_crosses'].items(),
+                             key=lambda x: float(x[0].rstrip('%'))) if crosses > 0]
 
-            for level_idx, (level_name, candle_num) in enumerate(touched_levels):
+            for level_idx, (level_name, cross_count) in enumerate(crossed_levels):
                 # Only show pattern name and type in first row of this pattern
                 if level_idx == 0:
                     pattern_item = QTableWidgetItem(pattern_name)
@@ -2461,18 +2641,18 @@ class BacktestingDialog(QDialog):
                     type_item = QTableWidgetItem("")
 
                 level_item = QTableWidgetItem(level_name)
-                candle_item = QTableWidgetItem(str(candle_num))
+                cross_item = QTableWidgetItem(str(cross_count))
 
                 # Center align
                 pattern_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 level_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                candle_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                cross_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
                 individual_table.setItem(current_row, 0, pattern_item)
                 individual_table.setItem(current_row, 1, type_item)
                 individual_table.setItem(current_row, 2, level_item)
-                individual_table.setItem(current_row, 3, candle_item)
+                individual_table.setItem(current_row, 3, cross_item)
 
                 current_row += 1
 
@@ -2492,7 +2672,7 @@ class BacktestingDialog(QDialog):
         dialog.exec()
 
     def runHarmonicPointsAnalysis(self):
-        """Analyze how many times harmonic pattern points A, B, C are crossed after point C"""
+        """Analyze how many times harmonic pattern points A, B, C are touched after point D"""
         from PyQt6.QtWidgets import QProgressDialog, QMessageBox
         from PyQt6.QtCore import Qt
 
@@ -2516,8 +2696,13 @@ class BacktestingDialog(QDialog):
             )
             return
 
-        # Get tracker
+        # Get tracker and backtesting data
         tracker = self.last_backtester.pattern_tracker if hasattr(self, 'last_backtester') else None
+        backtest_data = self.last_backtester.data if hasattr(self, 'last_backtester') else None
+
+        if backtest_data is None:
+            QMessageBox.warning(self, "No Data", "Backtesting data not available.")
+            return
 
         # Use the selected successful patterns
         patterns_to_analyze = self.current_category_patterns
@@ -2533,13 +2718,20 @@ class BacktestingDialog(QDialog):
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
 
-        # Initialize tracking for points A, B, C
+        # Initialize tracking for points A, B, C (separate for bullish and bearish)
         points_stats = {
-            'A': {'touched': 0, 'total_candles': 0, 'touches': []},
-            'B': {'touched': 0, 'total_candles': 0, 'touches': []},
-            'C': {'touched': 0, 'total_candles': 0, 'touches': []}
+            'bullish': {
+                'A': {'touched': 0, 'total_touches': 0, 'touches': []},
+                'B': {'touched': 0, 'total_touches': 0, 'touches': []},
+                'C': {'touched': 0, 'total_touches': 0, 'touches': []}
+            },
+            'bearish': {
+                'A': {'touched': 0, 'total_touches': 0, 'touches': []},
+                'B': {'touched': 0, 'total_touches': 0, 'touches': []},
+                'C': {'touched': 0, 'total_touches': 0, 'touches': []}
+            }
         }
-        total_patterns_analyzed = 0
+        total_patterns_analyzed = {'bullish': 0, 'bearish': 0}
         individual_pattern_results = []
 
         print(f"\n🔍 Starting Harmonic Points analysis on {len(patterns_to_analyze)} patterns")
@@ -2562,75 +2754,100 @@ class BacktestingDialog(QDialog):
                 points = pattern_dict.get('points', {})
                 pattern_id = pattern_dict.get('pattern_id')
 
-                print(f"\n🔍 Pattern {idx}: ID={pattern_id}, Points={list(points.keys())}")
-
                 # Get A, B, C prices
                 a_price = points.get('A', {}).get('price') if 'A' in points else None
                 b_price = points.get('B', {}).get('price') if 'B' in points else None
                 c_price = points.get('C', {}).get('price') if 'C' in points else None
 
-                if not all([a_price, b_price, c_price]):
-                    print(f"⚠️ Pattern {idx}: Missing price data - A:{a_price}, B:{b_price}, C:{c_price}")
+                # Get D price (for Fibonacci 161.8% calculation)
+                if 'D' in points:
+                    d_price = points['D']['price']
+                elif pattern_id and pattern_id in tracker.tracked_patterns:
+                    d_price = tracker.tracked_patterns[pattern_id].zone_entry_price
+                else:
+                    d_price = None
+
+                if not all([a_price, b_price, c_price, d_price]):
+                    print(f"⚠️ Pattern {idx}: Missing price data - A:{a_price}, B:{b_price}, C:{c_price}, D:{d_price}")
                     continue
 
-                print(f"✓ Pattern {idx}: A={a_price:.2f}, B={b_price:.2f}, C={c_price:.2f}")
+                # Determine direction (same logic as Fibonacci)
+                is_bullish = a_price > c_price
+                direction = 'bullish' if is_bullish else 'bearish'
 
-                # Get data after pattern SUCCESS (zone entry + reversal)
-                if tracked_pattern.reversal_bar:
-                    start_bar = tracked_pattern.reversal_bar
-                    print(f"  Using reversal_bar: {start_bar}")
-                elif tracked_pattern.zone_entry_bar:
-                    start_bar = tracked_pattern.zone_entry_bar
-                    print(f"  Using zone_entry_bar: {start_bar}")
+                # Calculate 161.8% Fibonacci level to stop analysis
+                if is_bullish:
+                    start_price = max(a_price, c_price)
+                    end_price = d_price
+                    price_range = end_price - start_price
                 else:
-                    c_bar = tracked_pattern.c_point[0] if tracked_pattern.c_point else None
-                    if not c_bar:
-                        print(f"  ⚠️ No start bar found!")
+                    start_price = d_price
+                    end_price = min(a_price, c_price)
+                    price_range = end_price - start_price
+
+                fib_161_8 = start_price + (price_range * 161.8 / 100.0)
+
+                # Get data after D point
+                d_bar = tracked_pattern.zone_entry_bar if tracked_pattern.zone_entry_bar else None
+                if not d_bar:
+                    if 'D' in points and 'index' in points['D']:
+                        d_bar = points['D']['index']
+                    elif tracked_pattern.actual_d_bar:
+                        d_bar = tracked_pattern.actual_d_bar
+                    else:
+                        print(f"  ⚠️ No D bar found!")
                         continue
-                    start_bar = c_bar
-                    print(f"  Using C point bar: {start_bar}")
 
-                display_data = self.full_data.iloc[start_bar:].copy().reset_index(drop=True)
-
-                print(f"  Start bar: {start_bar}, Data after: {len(display_data)} candles")
+                display_data = backtest_data.iloc[d_bar:].copy().reset_index(drop=True)
 
                 if display_data.empty:
-                    print(f"  ⚠️ No data after formation!")
+                    print(f"  ⚠️ No data after D point!")
                     continue
 
-                # Track which points were touched and when
-                pattern_point_touches = {'A': None, 'B': None, 'C': None}
-                touches_found = 0
+                # Find where 161.8% Fib is hit to stop analysis
+                stop_at_candle = len(display_data)
+                for candle_idx in range(len(display_data)):
+                    candle = display_data.iloc[candle_idx]
+                    if candle['Low'] <= fib_161_8 <= candle['High']:
+                        stop_at_candle = candle_idx + 1
+                        break
+
+                # Track point touches (count ALL touches, not just first)
+                # IMPORTANT: Start counting from candle AFTER D point (skip the D bar itself)
+                pattern_point_touches = {'A': 0, 'B': 0, 'C': 0}
+                total_touches = 0
 
                 for point_name, point_price in [('A', a_price), ('B', b_price), ('C', c_price)]:
-                    # Iterate through candles with proper index
-                    for candle_idx in range(len(display_data)):
+                    touches = 0
+
+                    # Start from index 1 to skip the D bar itself
+                    for candle_idx in range(1, min(stop_at_candle, len(display_data))):
                         candle = display_data.iloc[candle_idx]
-                        # Check if candle touched this point level (exact: Low <= level <= High)
+                        # Check if candle touched this point level (Low <= level <= High)
                         if candle['Low'] <= point_price <= candle['High']:
-                            # Update combined stats
-                            points_stats[point_name]['touched'] += 1
-                            points_stats[point_name]['total_candles'] += candle_idx + 1
-                            points_stats[point_name]['touches'].append(candle_idx + 1)
+                            touches += 1
 
-                            # Update individual pattern stats
-                            pattern_point_touches[point_name] = candle_idx + 1
+                    if touches > 0:
+                        # Update direction-specific stats
+                        points_stats[direction][point_name]['touched'] += 1
+                        points_stats[direction][point_name]['total_touches'] += touches
+                        points_stats[direction][point_name]['touches'].append(touches)
 
-                            touches_found += 1
-                            print(f"    ✓✓✓ Point {point_name} touched at candle {candle_idx + 1}")
-                            break  # Only count first touch
+                        # Update individual pattern stats
+                        pattern_point_touches[point_name] = touches
+                        total_touches += touches
 
                 # Store individual pattern result
                 individual_pattern_results.append({
                     'pattern_id': pattern_id,
                     'pattern_type': tracked_pattern.pattern_type,
                     'pattern_subtype': tracked_pattern.subtype,
+                    'direction': direction,
                     'point_touches': pattern_point_touches,
-                    'total_touches': touches_found
+                    'total_touches': total_touches
                 })
 
-                print(f"  Total point touches found: {touches_found}")
-                total_patterns_analyzed += 1
+                total_patterns_analyzed[direction] += 1
 
             except Exception as e:
                 print(f"❌ Error analyzing pattern {idx}: {e}")
@@ -2640,10 +2857,89 @@ class BacktestingDialog(QDialog):
 
         progress.setValue(len(patterns_to_analyze))
 
-        print(f"\n📊 Analysis complete: {total_patterns_analyzed} patterns analyzed")
+        total_analyzed = total_patterns_analyzed['bullish'] + total_patterns_analyzed['bearish']
+        print(f"\n📊 Analysis complete: {total_analyzed} patterns analyzed ({total_patterns_analyzed['bullish']} bullish, {total_patterns_analyzed['bearish']} bearish)")
+
+        # Save statistics to database for Active Trading Signals
+        self.saveHarmonicPointsStatistics(points_stats, total_patterns_analyzed, individual_pattern_results)
 
         # Generate results display
         self.showHarmonicPointsAnalysisResults(points_stats, total_patterns_analyzed, individual_pattern_results, category_name)
+
+    def saveHarmonicPointsStatistics(self, points_stats, total_patterns, individual_results):
+        """Save Harmonic Points analysis statistics to database for use in Active Trading Signals"""
+        try:
+            from signal_database import SignalDatabase
+
+            db = SignalDatabase()
+
+            # Get symbol and timeframe from backtester
+            if not hasattr(self, 'last_backtester'):
+                return
+
+            symbol = getattr(self.last_backtester, 'symbol', 'UNKNOWN')
+            timeframe = getattr(self.last_backtester, 'timeframe', 'UNKNOWN')
+
+            # Group patterns by type, name, and direction
+            pattern_groups = {}
+
+            for result in individual_results:
+                pattern_type = result['pattern_type']
+                pattern_name = result.get('pattern_subtype', pattern_type)
+                direction = result['direction']
+
+                key = (pattern_type, pattern_name, direction)
+
+                if key not in pattern_groups:
+                    pattern_groups[key] = []
+
+                pattern_groups[key].append(result)
+
+            # Calculate and save statistics for each group
+            for (pattern_type, pattern_name, direction), patterns in pattern_groups.items():
+                sample_count = len(patterns)
+
+                # Aggregate harmonic point statistics
+                point_aggregated = {'A': {'hit_count': 0, 'total_touches': 0},
+                                   'B': {'hit_count': 0, 'total_touches': 0},
+                                   'C': {'hit_count': 0, 'total_touches': 0}}
+
+                for pattern in patterns:
+                    point_touches = pattern.get('point_touches', {})
+
+                    for point_name in ['A', 'B', 'C']:
+                        touches = point_touches.get(point_name, 0)
+
+                        if touches > 0:
+                            point_aggregated[point_name]['hit_count'] += 1
+                            point_aggregated[point_name]['total_touches'] += touches
+
+                # Save each harmonic point statistic
+                for point_name, data in point_aggregated.items():
+                    if data['hit_count'] > 0:  # Only save if point was hit at least once
+                        hit_percentage = (data['hit_count'] / sample_count * 100) if sample_count > 0 else 0
+                        avg_touches = (data['total_touches'] / data['hit_count']) if data['hit_count'] > 0 else 0
+
+                        db.upsert_pattern_statistic(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            pattern_type=pattern_type,
+                            pattern_name=pattern_name,
+                            direction=direction,
+                            stat_type='harmonic_point',
+                            level_name=f"Point {point_name}",
+                            patterns_hit=data['hit_count'],
+                            hit_percentage=hit_percentage,
+                            avg_touches=avg_touches,
+                            sample_count=sample_count
+                        )
+
+            print(f"✅ Saved Harmonic Points statistics for {len(pattern_groups)} pattern groups")
+
+        except Exception as e:
+            print(f"⚠️ Error saving Harmonic Points statistics: {e}")
+            import traceback
+            traceback.print_exc()
 
     def showHarmonicPointsAnalysisResults(self, points_stats, total_patterns, individual_results, category_name="UNKNOWN"):
         """Display Harmonic Points analysis results in a dialog"""
@@ -2653,12 +2949,14 @@ class BacktestingDialog(QDialog):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Harmonic Points Analysis Results")
-        dialog.resize(1000, 700)
+        dialog.resize(1200, 700)
 
         layout = QVBoxLayout()
 
         # Header
-        header = QLabel(f"<b>Harmonic Points Analysis - {total_patterns} Patterns Analyzed ({category_name})</b>")
+        total_analyzed = total_patterns['bullish'] + total_patterns['bearish']
+        header = QLabel(f"<b>Harmonic Points Analysis - {total_analyzed} Patterns Analyzed ({category_name})</b><br>"
+                       f"<span style='font-size:12px;'>Bullish: {total_patterns['bullish']} | Bearish: {total_patterns['bearish']}</span>")
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet("font-size: 16px;")
         layout.addWidget(header)
@@ -2666,54 +2964,81 @@ class BacktestingDialog(QDialog):
         # Tab widget for combined and individual results
         tab_widget = QTabWidget()
 
-        # === TAB 1: COMBINED ANALYSIS TABLE ===
-        combined_table = QTableWidget()
-        combined_table.setColumnCount(4)
-        combined_table.setHorizontalHeaderLabels(["Point", "Times Touched", "Touch %", "Avg Candles"])
-
         # Set font
         font = QFont("Arial", 14)
-        combined_table.setFont(font)
 
-        # Populate table
-        combined_table.setRowCount(3)  # A, B, C
+        # === TAB 1: BULLISH PATTERNS COMBINED ANALYSIS ===
+        bullish_table = QTableWidget()
+        bullish_table.setColumnCount(4)
+        bullish_table.setHorizontalHeaderLabels(["Point", "Patterns Hit", "Hit %", "Avg Touches"])
+        bullish_table.setFont(font)
+        bullish_table.setRowCount(3)  # A, B, C
 
         for row, point_name in enumerate(['A', 'B', 'C']):
-            stat = points_stats[point_name]
+            stat = points_stats['bullish'][point_name]
             times_touched = stat['touched']
-            touch_percentage = (times_touched / total_patterns * 100) if total_patterns > 0 else 0
-            avg_candles = (stat['total_candles'] / times_touched) if times_touched > 0 else 0
+            total_bull = total_patterns['bullish']
+            touch_percentage = (times_touched / total_bull * 100) if total_bull > 0 else 0
+            avg_touches = (stat['total_touches'] / times_touched) if times_touched > 0 else 0
 
             # Create table items
             point_item = QTableWidgetItem(f"Point {point_name}")
             touched_item = QTableWidgetItem(str(times_touched))
             percentage_item = QTableWidgetItem(f"{touch_percentage:.1f}%")
-            avg_item = QTableWidgetItem(f"{avg_candles:.1f}")
+            avg_item = QTableWidgetItem(f"{avg_touches:.1f}")
 
             # Center align all items
-            point_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            touched_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            percentage_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            avg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            for item in [point_item, touched_item, percentage_item, avg_item]:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            combined_table.setItem(row, 0, point_item)
-            combined_table.setItem(row, 1, touched_item)
-            combined_table.setItem(row, 2, percentage_item)
-            combined_table.setItem(row, 3, avg_item)
+            bullish_table.setItem(row, 0, point_item)
+            bullish_table.setItem(row, 1, touched_item)
+            bullish_table.setItem(row, 2, percentage_item)
+            bullish_table.setItem(row, 3, avg_item)
 
-        # Resize columns to content
-        combined_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        bullish_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        tab_widget.addTab(bullish_table, "📈 Bullish Patterns")
 
-        tab_widget.addTab(combined_table, "Combined Analysis")
+        # === TAB 2: BEARISH PATTERNS COMBINED ANALYSIS ===
+        bearish_table = QTableWidget()
+        bearish_table.setColumnCount(4)
+        bearish_table.setHorizontalHeaderLabels(["Point", "Patterns Hit", "Hit %", "Avg Touches"])
+        bearish_table.setFont(font)
+        bearish_table.setRowCount(3)  # A, B, C
 
-        # === TAB 2: INDIVIDUAL PATTERNS TABLE ===
+        for row, point_name in enumerate(['A', 'B', 'C']):
+            stat = points_stats['bearish'][point_name]
+            times_touched = stat['touched']
+            total_bear = total_patterns['bearish']
+            touch_percentage = (times_touched / total_bear * 100) if total_bear > 0 else 0
+            avg_touches = (stat['total_touches'] / times_touched) if times_touched > 0 else 0
+
+            # Create table items
+            point_item = QTableWidgetItem(f"Point {point_name}")
+            touched_item = QTableWidgetItem(str(times_touched))
+            percentage_item = QTableWidgetItem(f"{touch_percentage:.1f}%")
+            avg_item = QTableWidgetItem(f"{avg_touches:.1f}")
+
+            # Center align all items
+            for item in [point_item, touched_item, percentage_item, avg_item]:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            bearish_table.setItem(row, 0, point_item)
+            bearish_table.setItem(row, 1, touched_item)
+            bearish_table.setItem(row, 2, percentage_item)
+            bearish_table.setItem(row, 3, avg_item)
+
+        bearish_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        tab_widget.addTab(bearish_table, "📉 Bearish Patterns")
+
+        # === TAB 3: INDIVIDUAL PATTERNS TABLE ===
         individual_table = QTableWidget()
-        individual_table.setColumnCount(4)
-        individual_table.setHorizontalHeaderLabels(["Pattern", "Pattern Type", "Point", "Candle #"])
+        individual_table.setColumnCount(5)
+        individual_table.setHorizontalHeaderLabels(["Pattern", "Pattern Type", "Direction", "Point", "Touches"])
         individual_table.setFont(font)
 
-        # Count total rows needed
-        total_rows = sum(len([pt for pt, candle in result['point_touches'].items() if candle is not None])
+        # Count total rows needed (only points with touches > 0)
+        total_rows = sum(len([pt for pt, touches in result['point_touches'].items() if touches > 0])
                         for result in individual_results)
         individual_table.setRowCount(total_rows)
 
@@ -2721,40 +3046,42 @@ class BacktestingDialog(QDialog):
         for idx, result in enumerate(individual_results, 1):
             pattern_name = f"#{idx}: {result['pattern_subtype']}"
             pattern_type = result['pattern_type']
+            direction = result['direction']
 
-            # Get all touched points
-            touched_points = [(point, candle) for point, candle in [('A', result['point_touches']['A']),
-                             ('B', result['point_touches']['B']), ('C', result['point_touches']['C'])] if candle is not None]
+            # Get all touched points (touches > 0)
+            touched_points = [(point, touches) for point, touches in [('A', result['point_touches']['A']),
+                             ('B', result['point_touches']['B']), ('C', result['point_touches']['C'])] if touches > 0]
 
-            for point_idx, (point_name, candle_num) in enumerate(touched_points):
-                # Only show pattern name and type in first row of this pattern
+            for point_idx, (point_name, touch_count) in enumerate(touched_points):
+                # Only show pattern name, type, and direction in first row of this pattern
                 if point_idx == 0:
                     pattern_item = QTableWidgetItem(pattern_name)
                     type_item = QTableWidgetItem(pattern_type)
+                    dir_item = QTableWidgetItem("📈 Bull" if direction == 'bullish' else "📉 Bear")
                 else:
                     pattern_item = QTableWidgetItem("")
                     type_item = QTableWidgetItem("")
+                    dir_item = QTableWidgetItem("")
 
                 point_item = QTableWidgetItem(f"Point {point_name}")
-                candle_item = QTableWidgetItem(str(candle_num))
+                touches_item = QTableWidgetItem(str(touch_count))
 
                 # Center align
-                pattern_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                point_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                candle_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                for item in [pattern_item, type_item, dir_item, point_item, touches_item]:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
                 individual_table.setItem(current_row, 0, pattern_item)
                 individual_table.setItem(current_row, 1, type_item)
-                individual_table.setItem(current_row, 2, point_item)
-                individual_table.setItem(current_row, 3, candle_item)
+                individual_table.setItem(current_row, 2, dir_item)
+                individual_table.setItem(current_row, 3, point_item)
+                individual_table.setItem(current_row, 4, touches_item)
 
                 current_row += 1
 
         # Resize columns
         individual_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
-        tab_widget.addTab(individual_table, "Individual Patterns")
+        tab_widget.addTab(individual_table, "📋 Individual Patterns")
 
         layout.addWidget(tab_widget)
 
@@ -2890,6 +3217,11 @@ class BacktestingDialog(QDialog):
                 date = self.display_data.index[x_int]
                 row = self.display_data.iloc[x_int]
 
+                # Get actual bar number from full_data
+                bar_number = x_int
+                if hasattr(self, 'display_start_idx') and self.display_start_idx is not None:
+                    bar_number = self.display_start_idx + x_int
+
                 # Format date - handle different date types
                 if hasattr(date, 'strftime'):
                     if date.hour == 0 and date.minute == 0 and date.second == 0:
@@ -2905,8 +3237,9 @@ class BacktestingDialog(QDialog):
                 low_price = float(row['Low'])
                 close_price = float(row['Close'])
 
-                # Create label text with better formatting - match GUI
-                label_text = f"Time: {date_str}\n"
+                # Create label text with better formatting - include bar number
+                label_text = f"Bar: {bar_number}\n"
+                label_text += f"Time: {date_str}\n"
                 label_text += f"Open:  ${open_price:,.2f}\n"
                 label_text += f"High:  ${high_price:,.2f}\n"
                 label_text += f"Low:   ${low_price:,.2f}\n"
@@ -2922,3 +3255,943 @@ class BacktestingDialog(QDialog):
 
         except Exception as e:
             pass
+
+    def runEnhancedPnLAnalysis(self):
+        """
+        Enhanced PnL Analysis for Successful Patterns Only
+
+        Strategy:
+        - Entry: Pattern D point
+        - TP1: First of (Fibonacci levels or Points A/B/C) - 25% profit
+        - TP2, TP3, etc.: Subsequent levels - 10% profit each
+        - Stop Loss: Initial SL, track if hit
+        - Move SL to entry after TP1
+        - Position size: $100 per trade
+        - Leverage: 1x
+        - Long for bullish, Short for bearish
+        """
+        from PyQt6.QtWidgets import QProgressDialog
+
+        if not hasattr(self, 'last_backtester') or not self.last_backtester:
+            QMessageBox.warning(self, "No Data", "Please run backtest first")
+            return
+
+        if not hasattr(self, 'current_category_patterns') or not self.current_category_patterns:
+            QMessageBox.warning(self, "No Patterns", "Please load patterns first")
+            return
+
+        # Filter only successful patterns
+        successful_patterns = [p for p in self.current_category_patterns if p.get('status') == 'success']
+
+        # Debug: Show pattern status breakdown
+        if not successful_patterns:
+            status_counts = {}
+            for p in self.current_category_patterns:
+                status = p.get('status', 'unknown')
+                status_counts[status] = status_counts.get(status, 0) + 1
+
+            status_msg = f"No successful patterns found.\n\nPattern status breakdown:\n"
+            for status, count in status_counts.items():
+                status_msg += f"  {status}: {count}\n"
+            status_msg += f"\nTotal patterns: {len(self.current_category_patterns)}\n\n"
+            status_msg += "Note: Enhanced PnL only works on patterns with status='success'.\n"
+            status_msg += "Try running Fibonacci Level Analysis first to mark patterns as successful."
+
+            QMessageBox.warning(self, "No Successful Patterns", status_msg)
+            return
+
+        # Progress dialog
+        progress = QProgressDialog("Calculating Enhanced PnL...", "Cancel", 0, len(successful_patterns), self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+
+        backtest_data = self.last_backtester.data
+        tracker = self.last_backtester.pattern_tracker
+
+        results = []
+        skipped_reasons = {}  # Track why patterns are skipped
+
+        for idx, pattern_dict in enumerate(successful_patterns):
+            progress.setValue(idx)
+            if progress.wasCanceled():
+                break
+
+            try:
+                pattern_id = pattern_dict.get('pattern_id')
+                if not pattern_id:
+                    skipped_reasons['no_pattern_id'] = skipped_reasons.get('no_pattern_id', 0) + 1
+                    continue
+
+                if pattern_id not in tracker.tracked_patterns:
+                    skipped_reasons['not_in_tracker'] = skipped_reasons.get('not_in_tracker', 0) + 1
+                    continue
+
+                tracked_pattern = tracker.tracked_patterns[pattern_id]
+                points = pattern_dict.get('points', {})
+
+                # Get D point price (entry)
+                entry_price = None
+                d_bar = None
+
+                if 'D' in points and 'price' in points['D']:
+                    entry_price = points['D']['price']
+                    d_bar = points['D'].get('index', points['D'].get('bar'))
+                elif tracked_pattern.zone_entry_price:
+                    entry_price = tracked_pattern.zone_entry_price
+                    d_bar = tracked_pattern.zone_entry_bar
+
+                if not entry_price or d_bar is None:
+                    skipped_reasons['no_entry_or_dbar'] = skipped_reasons.get('no_entry_or_dbar', 0) + 1
+                    continue
+
+                # Determine direction
+                a_price = points.get('A', {}).get('price', 0)
+                c_price = points.get('C', {}).get('price', 0)
+                is_bullish = a_price > c_price
+
+                # Get Points A, B, C prices
+                point_a = a_price
+                point_b = points.get('B', {}).get('price', 0)
+                point_c = c_price
+
+                # Calculate Fibonacci RETRACEMENT levels for TP targets
+                # These are the reversal targets from D point back towards A/C
+                # For bullish: D is bottom, targets are upward towards C/A
+                # For bearish: D is top, targets are downward towards C/A
+
+                if is_bullish:
+                    # Bullish: Retracement from D (low) back up to C (high)
+                    # D is entry, targets are upward
+                    fib_start = entry_price  # D point (low)
+                    fib_end = c_price  # C point (high)
+                else:
+                    # Bearish: Retracement from D (high) back down to C (low)
+                    # D is entry, targets are downward
+                    fib_start = entry_price  # D point (high)
+                    fib_end = c_price  # C point (low)
+
+                price_range = fib_end - fib_start
+
+                # Fibonacci retracement percentages
+                fib_percentages = [23.6, 38.2, 50, 61.8, 78.6, 88.6, 100]
+                fib_levels = {}
+                for pct in fib_percentages:
+                    level_price = fib_start + (price_range * pct / 100.0)
+                    fib_levels[pct] = level_price
+
+                # Get Stop Loss from pattern
+                stop_loss = pattern_dict.get('stop_loss', entry_price * 0.98 if is_bullish else entry_price * 1.02)
+
+                # Build all TP candidates (Fib + Harmonic Points)
+                all_candidates = []
+
+                # Add Fib levels as candidates
+                for pct, fib_price in fib_levels.items():
+                    all_candidates.append(('Fib', f"{pct}%", fib_price))
+
+                # Add harmonic points as candidates
+                if point_a > 0:
+                    all_candidates.append(('Point', 'A', point_a))
+                if point_b > 0:
+                    all_candidates.append(('Point', 'B', point_b))
+                if point_c > 0:
+                    all_candidates.append(('Point', 'C', point_c))
+
+                # Sort candidates by distance from entry (closest to furthest in profit direction)
+                if is_bullish:
+                    # For bullish, TP levels should be above entry
+                    all_candidates = [c for c in all_candidates if c[2] > entry_price]
+                    all_candidates.sort(key=lambda x: x[2])  # Ascending
+                else:
+                    # For bearish, TP levels should be below entry
+                    all_candidates = [c for c in all_candidates if c[2] < entry_price]
+                    all_candidates.sort(key=lambda x: x[2], reverse=True)  # Descending
+
+                if not all_candidates:
+                    skipped_reasons['no_tp_candidates'] = skipped_reasons.get('no_tp_candidates', 0) + 1
+                    continue
+
+                # Track all TPs and SL hits
+                display_data = backtest_data.iloc[d_bar:].copy().reset_index(drop=True)
+
+                position_size = 100  # $100 per trade
+                leverage = 1  # 1x leverage
+
+                tp_hits = []  # List of {tp_num, tp_name, tp_price, tp_bar, bars_to_tp, profit_usd, profit_pct}
+                sl_hit = False
+                sl_hit_bar = None
+                remaining_candidates = all_candidates.copy()
+                current_sl = stop_loss
+
+                # Scan through candles after D
+                for candle_idx in range(1, len(display_data)):
+                    candle = display_data.iloc[candle_idx]
+                    current_bar = d_bar + candle_idx
+
+                    # Check if SL hit first
+                    if is_bullish:
+                        if candle['Low'] <= current_sl:
+                            sl_hit = True
+                            sl_hit_bar = current_bar
+                            break
+                    else:
+                        if candle['High'] >= current_sl:
+                            sl_hit = True
+                            sl_hit_bar = current_bar
+                            break
+
+                    # Check if any TP level hit
+                    for candidate_type, candidate_name, candidate_price in remaining_candidates:
+                        if candle['Low'] <= candidate_price <= candle['High']:
+                            tp_num = len(tp_hits) + 1
+                            tp_name = f"{candidate_type} {candidate_name}"
+
+                            # Calculate profit for this TP
+                            if is_bullish:
+                                price_change_percent = ((candidate_price - entry_price) / entry_price) * 100
+                            else:
+                                price_change_percent = ((entry_price - candidate_price) / entry_price) * 100
+
+                            # TP1: 25%, TP2+: 10% each
+                            position_pct = 0.25 if tp_num == 1 else 0.10
+                            profit_percent = price_change_percent * leverage * position_pct
+                            profit_usd = (position_size * profit_percent) / 100
+
+                            tp_hits.append({
+                                'tp_num': tp_num,
+                                'tp_name': tp_name,
+                                'tp_price': candidate_price,
+                                'tp_bar': current_bar,
+                                'bars_to_tp': current_bar - d_bar,
+                                'profit_usd': profit_usd,
+                                'profit_pct': profit_percent,
+                                'position_pct': position_pct * 100
+                            })
+
+                            # After TP1, move SL to entry
+                            if tp_num == 1:
+                                current_sl = entry_price
+
+                            # Remove this candidate
+                            remaining_candidates.remove((candidate_type, candidate_name, candidate_price))
+                            break
+
+                # Mark as pending if no outcome yet (neither TP nor SL hit)
+                is_pending = not tp_hits and not sl_hit
+
+                if is_pending:
+                    # Log pending pattern
+                    print(f"\n⏳ Pattern {pattern_id} - Pending (no TP or SL hit yet):")
+                    print(f"   Entry: ${entry_price:.2f} at bar {d_bar}")
+                    print(f"   Direction: {'Bullish' if is_bullish else 'Bearish'}")
+                    print(f"   TP Candidates ({len(all_candidates)}): {[(c[1], f'${c[2]:.2f}') for c in all_candidates[:5]]}")
+                    print(f"   Candles after D: {len(display_data) - 1}")
+                    if len(display_data) > 1:
+                        print(f"   Price range after D: ${display_data['Low'].min():.2f} - ${display_data['High'].max():.2f}")
+                    print(f"   Status: Will update when price hits TP or SL")
+
+                # Calculate total profit/loss
+                total_profit_usd = sum(tp['profit_usd'] for tp in tp_hits)
+
+                # If SL was hit, calculate the loss
+                if sl_hit:
+                    # Calculate loss based on when SL was hit
+                    if is_bullish:
+                        # For bullish: SL is below entry, loss when price goes down
+                        price_change_percent = ((stop_loss - entry_price) / entry_price) * 100
+                    else:
+                        # For bearish: SL is above entry, loss when price goes up
+                        price_change_percent = ((entry_price - stop_loss) / entry_price) * 100
+
+                    # Calculate position percentage remaining (100% - TPs already taken)
+                    position_taken = sum(tp['position_pct'] for tp in tp_hits)
+                    position_remaining = 100 - position_taken
+
+                    # Calculate loss on remaining position
+                    sl_loss_percent = price_change_percent * leverage * (position_remaining / 100)
+                    sl_loss_usd = (position_size * sl_loss_percent) / 100
+
+                    # Add SL loss to total (will be negative)
+                    total_profit_usd += sl_loss_usd
+
+                    # Log the SL hit
+                    print(f"\n🛑 Pattern {pattern_id} - SL Hit:")
+                    print(f"   Entry: ${entry_price:.2f}, SL: ${stop_loss:.2f}")
+                    print(f"   TPs hit before SL: {len(tp_hits)}")
+                    print(f"   Position remaining: {position_remaining:.0f}%")
+                    print(f"   SL Loss: ${sl_loss_usd:.2f}")
+                    print(f"   Total P/L: ${total_profit_usd:.2f}")
+
+                # Calculate bars to outcome (first TP or SL)
+                outcome_bar = None
+                bars_to_outcome = None
+
+                if tp_hits:
+                    # First TP hit bar
+                    outcome_bar = tp_hits[0]['tp_bar']
+                    bars_to_outcome = tp_hits[0]['bars_to_tp']
+                elif sl_hit:
+                    # SL hit bar
+                    outcome_bar = sl_hit_bar
+                    bars_to_outcome = sl_hit_bar - d_bar if sl_hit_bar else None
+
+                # Determine status
+                if is_pending:
+                    status = 'Pending'
+                elif total_profit_usd > 0:
+                    status = 'Profit'
+                elif total_profit_usd < 0:
+                    status = 'Loss'
+                else:
+                    status = 'Breakeven'
+
+                # Store result
+                result = {
+                    'pattern_id': pattern_id,
+                    'pattern_name': pattern_dict.get('pattern_subtype', 'Unknown'),
+                    'direction': 'Bullish' if is_bullish else 'Bearish',
+                    'entry_price': entry_price,
+                    'entry_bar': d_bar,
+                    'stop_loss': stop_loss,
+                    'sl_hit': sl_hit,
+                    'sl_hit_bar': sl_hit_bar,
+                    'outcome_bar': outcome_bar,
+                    'bars_to_outcome': bars_to_outcome,
+                    'tp_hits': tp_hits,
+                    'total_profit_usd': total_profit_usd,
+                    'num_tps_hit': len(tp_hits),
+                    'status': status,
+                    'is_pending': is_pending
+                }
+
+                results.append(result)
+
+            except Exception as e:
+                print(f"Error calculating enhanced PnL for pattern {idx}: {e}")
+                continue
+
+        progress.setValue(len(successful_patterns))
+
+        if not results:
+            # Show detailed error message with skip reasons
+            error_msg = f"Could not calculate PnL for any successful patterns.\n\n"
+            error_msg += f"Analyzed {len(successful_patterns)} successful patterns, but all were skipped.\n\n"
+            error_msg += "Skip reasons:\n"
+            for reason, count in skipped_reasons.items():
+                error_msg += f"  • {reason}: {count} patterns\n"
+
+            error_msg += "\nPossible solutions:\n"
+            error_msg += "  • Ensure patterns have D point data\n"
+            error_msg += "  • Verify Fibonacci levels or harmonic points exist\n"
+            error_msg += "  • Check that price moved beyond entry after pattern formed\n"
+
+            QMessageBox.information(self, "No Results", error_msg)
+            return
+
+        # Show results
+        self.showEnhancedPnLResults(results)
+
+    def showEnhancedPnLResults(self, results):
+        """Display Enhanced PnL Analysis Results with multiple TPs and SL tracking"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QPushButton, QTabWidget, QTextEdit
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QFont, QColor
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💰 Enhanced PnL Analysis - Multi-TP Strategy")
+        dialog.resize(1400, 800)
+
+        layout = QVBoxLayout()
+
+        # Separate completed and pending patterns
+        completed_results = [r for r in results if not r['is_pending']]
+        pending_results = [r for r in results if r['is_pending']]
+
+        # Calculate summary statistics (only for completed)
+        total_profit = sum(r['total_profit_usd'] for r in completed_results)
+        avg_profit = total_profit / len(completed_results) if completed_results else 0
+        profitable_trades = len([r for r in completed_results if r['total_profit_usd'] > 0])
+        losing_trades = len([r for r in completed_results if r['total_profit_usd'] < 0])
+        breakeven_trades = len([r for r in completed_results if r['total_profit_usd'] == 0])
+        win_rate = (profitable_trades / len(completed_results) * 100) if completed_results else 0
+
+        # Calculate TP statistics
+        avg_tps_hit = sum(r['num_tps_hit'] for r in completed_results) / len(completed_results) if completed_results else 0
+        sl_hit_count = len([r for r in completed_results if r['sl_hit']])
+
+        # Separate SL stats: with and without TPs
+        sl_with_tps = len([r for r in completed_results if r['sl_hit'] and r['num_tps_hit'] > 0])
+        sl_without_tps = len([r for r in completed_results if r['sl_hit'] and r['num_tps_hit'] == 0])
+
+        avg_bars_to_tp1 = sum(r['tp_hits'][0]['bars_to_tp'] for r in completed_results if r['tp_hits']) / len([r for r in completed_results if r['tp_hits']]) if any(r['tp_hits'] for r in completed_results) else 0
+
+        # Calculate average bars to outcome (for completed patterns)
+        avg_bars_to_outcome = sum(r['bars_to_outcome'] for r in completed_results if r['bars_to_outcome'] is not None) / len([r for r in completed_results if r['bars_to_outcome'] is not None]) if any(r['bars_to_outcome'] is not None for r in completed_results) else 0
+
+        # Calculate total loss from SL hits
+        total_sl_loss = sum(
+            r['total_profit_usd'] - sum(tp['profit_usd'] for tp in r['tp_hits'])
+            for r in completed_results if r['sl_hit']
+        )
+
+        # Summary header
+        summary = f"""
+        <h2>Enhanced PnL Analysis Summary</h2>
+        <p><b>Strategy:</b> Entry at D point, TP1=25% profit, TP2/TP3/etc=10% profit each, Move SL to entry after TP1</p>
+        <p><b>Position Size:</b> $100 per trade | <b>Leverage:</b> 1x | <b>Direction:</b> Long for bullish, Short for bearish</p>
+        <hr>
+        <p><b>Total Patterns Analyzed:</b> {len(results)}</p>
+        <p><b>  • Completed:</b> {len(completed_results)}</p>
+        <p><b>  • ⏳ Pending:</b> {len(pending_results)} (awaiting TP/SL hit)</p>
+        <hr>
+        <h3>Completed Trades Performance:</h3>
+        <p><b>Total P/L (Including SL Losses):</b> <span style='color: {"green" if total_profit >= 0 else "red"}; font-weight: bold;'>${total_profit:.2f}</span></p>
+        <p><b>Average P/L per Trade:</b> <span style='color: {"green" if avg_profit >= 0 else "red"}'>${avg_profit:.2f}</span></p>
+        <p><b>Average Bars to Outcome:</b> {avg_bars_to_outcome:.1f} bars</p>
+        <hr>
+        <p><b>✅ Profitable Trades:</b> {profitable_trades} ({win_rate:.1f}%)</p>
+        <p><b>❌ Losing Trades:</b> {losing_trades} ({(losing_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
+        <p><b>⚖️ Breakeven Trades:</b> {breakeven_trades} ({(breakeven_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
+        <hr>
+        <p><b>Average TPs Hit:</b> {avg_tps_hit:.1f} TPs per pattern</p>
+        <p><b>Average Bars to TP1:</b> {avg_bars_to_tp1:.1f} bars</p>
+        <hr>
+        <p><b>🛑 Stop Loss Hit:</b> {sl_hit_count} trades ({(sl_hit_count/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
+        <p style='margin-left: 20px;'>• After hitting TPs: {sl_with_tps} trades</p>
+        <p style='margin-left: 20px;'>• Before hitting any TP: {sl_without_tps} trades</p>
+        <p><b>Total Loss from SL:</b> <span style='color: red;'>${total_sl_loss:.2f}</span></p>
+        """
+
+        summary_label = QLabel(summary)
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
+
+        # Create tab widget
+        tab_widget = QTabWidget()
+
+        # Tab 1: Summary Table
+        summary_table = QTableWidget()
+        summary_table.setRowCount(len(results))
+        summary_table.setColumnCount(11)
+        summary_table.setHorizontalHeaderLabels([
+            "Pattern", "Direction", "Entry $", "Entry Bar", "SL $",
+            "Outcome Bar", "Bars to Outcome", "TPs Hit",
+            "Total P/L $", "SL Hit", "Status"
+        ])
+
+        font = QFont("Arial", 10)
+        summary_table.setFont(font)
+
+        for row, result in enumerate(results):
+            col = 0
+
+            # Pattern name
+            summary_table.setItem(row, col, QTableWidgetItem(result['pattern_name']))
+            col += 1
+
+            # Direction
+            dir_item = QTableWidgetItem(result['direction'])
+            dir_item.setForeground(QColor(0, 150, 0) if result['direction'] == 'Bullish' else QColor(200, 0, 0))
+            summary_table.setItem(row, col, dir_item)
+            col += 1
+
+            # Entry price
+            summary_table.setItem(row, col, QTableWidgetItem(f"${result['entry_price']:.2f}"))
+            col += 1
+
+            # Entry bar
+            summary_table.setItem(row, col, QTableWidgetItem(str(result['entry_bar'])))
+            col += 1
+
+            # Stop Loss
+            summary_table.setItem(row, col, QTableWidgetItem(f"${result['stop_loss']:.2f}"))
+            col += 1
+
+            # Outcome bar (first TP or SL hit)
+            outcome_bar_text = str(result['outcome_bar']) if result['outcome_bar'] else "—"
+            summary_table.setItem(row, col, QTableWidgetItem(outcome_bar_text))
+            col += 1
+
+            # Bars to outcome
+            bars_text = str(result['bars_to_outcome']) if result['bars_to_outcome'] is not None else "—"
+            summary_table.setItem(row, col, QTableWidgetItem(bars_text))
+            col += 1
+
+            # TPs hit
+            tp_text = f"{result['num_tps_hit']} TPs"
+            summary_table.setItem(row, col, QTableWidgetItem(tp_text))
+            col += 1
+
+            # Total P/L
+            if result['is_pending']:
+                pl_item = QTableWidgetItem("—")
+                pl_item.setForeground(QColor(128, 128, 128))  # Gray for pending
+            else:
+                pl_item = QTableWidgetItem(f"${result['total_profit_usd']:.2f}")
+                pl_item.setForeground(QColor(0, 150, 0) if result['total_profit_usd'] >= 0 else QColor(200, 0, 0))
+            summary_table.setItem(row, col, pl_item)
+            col += 1
+
+            # SL Hit
+            sl_status = "❌ YES" if result['sl_hit'] else "✅ NO"
+            sl_item = QTableWidgetItem(sl_status)
+            sl_item.setForeground(QColor(200, 0, 0) if result['sl_hit'] else QColor(0, 150, 0))
+            summary_table.setItem(row, col, sl_item)
+            col += 1
+
+            # Status
+            status_text = result['status']
+            if status_text == 'Profit':
+                status_display = "✅ Profit"
+                status_color = QColor(0, 150, 0)
+            elif status_text == 'Loss':
+                status_display = "❌ Loss"
+                status_color = QColor(200, 0, 0)
+            elif status_text == 'Pending':
+                status_display = "⏳ Pending"
+                status_color = QColor(255, 165, 0)  # Orange
+            else:
+                status_display = "⚖️ Breakeven"
+                status_color = QColor(128, 128, 128)
+
+            status_item = QTableWidgetItem(status_display)
+            status_item.setForeground(status_color)
+            summary_table.setItem(row, col, status_item)
+
+        summary_table.horizontalHeader().setStretchLastSection(True)
+        tab_widget.addTab(summary_table, "📊 Summary")
+
+        # Tab 2: Detailed TP Breakdown
+        detail_table = QTableWidget()
+
+        # Count total TP rows needed
+        total_tp_rows = sum(len(r['tp_hits']) for r in results)
+        detail_table.setRowCount(total_tp_rows)
+        detail_table.setColumnCount(10)
+        detail_table.setHorizontalHeaderLabels([
+            "Pattern", "Direction", "Entry $", "TP#", "TP Level", "TP Price $",
+            "Bars to TP", "Position %", "Profit %", "Profit $"
+        ])
+
+        detail_table.setFont(font)
+
+        detail_row = 0
+        for result in results:
+            for tp in result['tp_hits']:
+                # Pattern name
+                detail_table.setItem(detail_row, 0, QTableWidgetItem(result['pattern_name']))
+
+                # Direction
+                dir_item = QTableWidgetItem(result['direction'])
+                dir_item.setForeground(QColor(0, 150, 0) if result['direction'] == 'Bullish' else QColor(200, 0, 0))
+                detail_table.setItem(detail_row, 1, dir_item)
+
+                # Entry price
+                detail_table.setItem(detail_row, 2, QTableWidgetItem(f"${result['entry_price']:.2f}"))
+
+                # TP number
+                tp_num_item = QTableWidgetItem(f"TP{tp['tp_num']}")
+                if tp['tp_num'] == 1:
+                    tp_num_item.setForeground(QColor(0, 100, 200))  # Blue for TP1
+                detail_table.setItem(detail_row, 3, tp_num_item)
+
+                # TP level name
+                detail_table.setItem(detail_row, 4, QTableWidgetItem(tp['tp_name']))
+
+                # TP price
+                detail_table.setItem(detail_row, 5, QTableWidgetItem(f"${tp['tp_price']:.2f}"))
+
+                # Bars to TP
+                detail_table.setItem(detail_row, 6, QTableWidgetItem(str(tp['bars_to_tp'])))
+
+                # Position %
+                detail_table.setItem(detail_row, 7, QTableWidgetItem(f"{tp['position_pct']:.0f}%"))
+
+                # Profit %
+                profit_pct_item = QTableWidgetItem(f"{tp['profit_pct']:.2f}%")
+                profit_pct_item.setForeground(QColor(0, 150, 0) if tp['profit_pct'] >= 0 else QColor(200, 0, 0))
+                detail_table.setItem(detail_row, 8, profit_pct_item)
+
+                # Profit $
+                profit_item = QTableWidgetItem(f"${tp['profit_usd']:.2f}")
+                profit_item.setForeground(QColor(0, 150, 0) if tp['profit_usd'] >= 0 else QColor(200, 0, 0))
+                detail_table.setItem(detail_row, 9, profit_item)
+
+                detail_row += 1
+
+        detail_table.horizontalHeader().setStretchLastSection(True)
+        tab_widget.addTab(detail_table, "📈 TP Details")
+
+        # Tab 3: Stop Loss Details
+        sl_patterns = [r for r in results if r['sl_hit']]
+        if sl_patterns:
+            sl_table = QTableWidget()
+            sl_table.setRowCount(len(sl_patterns))
+            sl_table.setColumnCount(9)
+            sl_table.setHorizontalHeaderLabels([
+                "Pattern", "Direction", "Entry $", "SL $", "SL Bar",
+                "TPs Before SL", "Position Left %", "SL Loss $", "Total P/L $"
+            ])
+            sl_table.setFont(font)
+
+            for row, result in enumerate(sl_patterns):
+                # Pattern name
+                sl_table.setItem(row, 0, QTableWidgetItem(result['pattern_name']))
+
+                # Direction
+                dir_item = QTableWidgetItem(result['direction'])
+                dir_item.setForeground(QColor(0, 150, 0) if result['direction'] == 'Bullish' else QColor(200, 0, 0))
+                sl_table.setItem(row, 1, dir_item)
+
+                # Entry price
+                sl_table.setItem(row, 2, QTableWidgetItem(f"${result['entry_price']:.2f}"))
+
+                # Stop Loss price
+                sl_table.setItem(row, 3, QTableWidgetItem(f"${result['stop_loss']:.2f}"))
+
+                # SL hit bar
+                sl_table.setItem(row, 4, QTableWidgetItem(str(result['sl_hit_bar']) if result['sl_hit_bar'] else "N/A"))
+
+                # TPs hit before SL
+                sl_table.setItem(row, 5, QTableWidgetItem(str(result['num_tps_hit'])))
+
+                # Calculate position left
+                position_taken = sum(tp['position_pct'] for tp in result['tp_hits'])
+                position_left = 100 - position_taken
+                sl_table.setItem(row, 6, QTableWidgetItem(f"{position_left:.0f}%"))
+
+                # Calculate SL loss
+                entry = result['entry_price']
+                sl = result['stop_loss']
+                is_bullish = result['direction'] == 'Bullish'
+
+                if is_bullish:
+                    price_change_pct = ((sl - entry) / entry) * 100
+                else:
+                    price_change_pct = ((entry - sl) / entry) * 100
+
+                sl_loss_pct = price_change_pct * (position_left / 100)
+                sl_loss_usd = (100 * sl_loss_pct) / 100  # position_size = 100
+
+                sl_loss_item = QTableWidgetItem(f"${sl_loss_usd:.2f}")
+                sl_loss_item.setForeground(QColor(200, 0, 0))  # Red for loss
+                sl_table.setItem(row, 7, sl_loss_item)
+
+                # Total P/L
+                total_pl_item = QTableWidgetItem(f"${result['total_profit_usd']:.2f}")
+                total_pl_item.setForeground(QColor(0, 150, 0) if result['total_profit_usd'] >= 0 else QColor(200, 0, 0))
+                sl_table.setItem(row, 8, total_pl_item)
+
+            sl_table.horizontalHeader().setStretchLastSection(True)
+            tab_widget.addTab(sl_table, f"🛑 Stop Loss Details ({len(sl_patterns)})")
+
+        layout.addWidget(tab_widget)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def runPnLAnalysis(self):
+        """Run PnL (Profit and Loss) analysis on current patterns"""
+        # Check if patterns are loaded
+        if not hasattr(self, 'current_category_patterns') or not self.current_category_patterns:
+            QMessageBox.information(
+                self,
+                "No Patterns Loaded",
+                "Please load a category first by clicking one of the pattern completion buttons."
+            )
+            return
+
+        # Show input dialog for PnL parameters
+        dialog = QDialog(self)
+        dialog.setWindowTitle("PnL Analysis Parameters")
+        dialog.setMinimumWidth(400)
+        layout = QVBoxLayout()
+
+        # Instructions
+        instructions = QLabel("Enter trading parameters to calculate Profit & Loss:")
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+
+        # Entry Type selection
+        entry_type_group = QGroupBox("Entry Price")
+        entry_type_layout = QVBoxLayout()
+
+        self.entry_type_combo = QComboBox()
+        self.entry_type_combo.addItems([
+            "Pattern D Point",
+            "PRZ Zone Entry (for unformed)",
+            "Custom Price"
+        ])
+        entry_type_layout.addWidget(self.entry_type_combo)
+
+        # Custom entry price field (hidden by default)
+        self.custom_entry_layout = QHBoxLayout()
+        self.custom_entry_layout.addWidget(QLabel("Custom Entry:"))
+        self.custom_entry_input = QLineEdit()
+        self.custom_entry_input.setPlaceholderText("Enter price...")
+        self.custom_entry_input.setEnabled(False)
+        self.custom_entry_layout.addWidget(self.custom_entry_input)
+        entry_type_layout.addLayout(self.custom_entry_layout)
+
+        # Connect combo box to enable/disable custom input
+        self.entry_type_combo.currentTextChanged.connect(
+            lambda text: self.custom_entry_input.setEnabled(text == "Custom Price")
+        )
+
+        entry_type_group.setLayout(entry_type_layout)
+        layout.addWidget(entry_type_group)
+
+        # Exit Type selection
+        exit_type_group = QGroupBox("Exit Price")
+        exit_type_layout = QVBoxLayout()
+
+        self.exit_type_combo = QComboBox()
+        self.exit_type_combo.addItems([
+            "Reversal Point (actual exit from backtest)",
+            "Custom Price"
+        ])
+        exit_type_layout.addWidget(self.exit_type_combo)
+
+        # Custom exit price field
+        self.custom_exit_layout = QHBoxLayout()
+        self.custom_exit_layout.addWidget(QLabel("Custom Exit:"))
+        self.custom_exit_input = QLineEdit()
+        self.custom_exit_input.setPlaceholderText("Enter price...")
+        self.custom_exit_input.setEnabled(False)
+        self.custom_exit_layout.addWidget(self.custom_exit_input)
+        exit_type_layout.addLayout(self.custom_exit_layout)
+
+        self.exit_type_combo.currentTextChanged.connect(
+            lambda text: self.custom_exit_input.setEnabled(text == "Custom Price")
+        )
+
+        exit_type_group.setLayout(exit_type_layout)
+        layout.addWidget(exit_type_group)
+
+        # Position Type
+        position_layout = QHBoxLayout()
+        position_layout.addWidget(QLabel("Position Type:"))
+        self.position_combo = QComboBox()
+        self.position_combo.addItems(["Long", "Short"])
+        position_layout.addWidget(self.position_combo)
+        layout.addLayout(position_layout)
+
+        # Leverage
+        leverage_layout = QHBoxLayout()
+        leverage_layout.addWidget(QLabel("Leverage:"))
+        self.leverage_spin = QSpinBox()
+        self.leverage_spin.setRange(1, 125)
+        self.leverage_spin.setValue(1)
+        self.leverage_spin.setSuffix("x")
+        leverage_layout.addWidget(self.leverage_spin)
+        layout.addLayout(leverage_layout)
+
+        # Position Size (in USD)
+        position_size_layout = QHBoxLayout()
+        position_size_layout.addWidget(QLabel("Position Size (USD):"))
+        self.position_size_input = QLineEdit()
+        self.position_size_input.setText("100")
+        self.position_size_input.setPlaceholderText("Enter amount...")
+        position_size_layout.addWidget(self.position_size_input)
+        layout.addLayout(position_size_layout)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        calculate_btn = QPushButton("Calculate PnL")
+        calculate_btn.clicked.connect(lambda: self.calculatePnL(dialog))
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.close)
+        button_layout.addWidget(calculate_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def calculatePnL(self, dialog):
+        """Calculate and display PnL based on user inputs"""
+        try:
+            # Get user inputs
+            entry_type = self.entry_type_combo.currentText()
+            exit_type = self.exit_type_combo.currentText()
+            position_type = self.position_combo.currentText()
+            leverage = self.leverage_spin.value()
+
+            # Validate position size
+            try:
+                position_size = float(self.position_size_input.text())
+                if position_size <= 0:
+                    raise ValueError("Position size must be positive")
+            except ValueError as e:
+                QMessageBox.warning(dialog, "Invalid Input", f"Position size error: {str(e)}")
+                return
+
+            # Calculate PnL for each pattern
+            results = []
+            total_pnl = 0
+            total_pnl_percent = 0
+            successful_trades = 0
+            failed_trades = 0
+
+            for pattern_dict in self.current_category_patterns:
+                try:
+                    # Get entry price
+                    entry_price = None
+                    if entry_type == "Pattern D Point":
+                        if 'D' in pattern_dict.get('points', {}):
+                            entry_price = pattern_dict['points']['D']['price']
+                    elif entry_type == "PRZ Zone Entry (for unformed)":
+                        if 'zone_entry_price' in pattern_dict:
+                            entry_price = pattern_dict['zone_entry_price']
+                    elif entry_type == "Custom Price":
+                        try:
+                            entry_price = float(self.custom_entry_input.text())
+                        except:
+                            continue
+
+                    if entry_price is None:
+                        continue
+
+                    # Get exit price
+                    exit_price = None
+                    if exit_type == "Reversal Point (actual exit from backtest)":
+                        pattern_id = pattern_dict.get('pattern_id')
+                        if pattern_id and hasattr(self.last_backtester, 'pattern_tracker'):
+                            tracker = self.last_backtester.pattern_tracker
+                            if pattern_id in tracker.tracked_patterns:
+                                tracked = tracker.tracked_patterns[pattern_id]
+                                if tracked.reversal_bar and self.full_data is not None:
+                                    if 0 <= tracked.reversal_bar < len(self.full_data):
+                                        exit_price = self.full_data.iloc[tracked.reversal_bar]['Close']
+                    elif exit_type == "Custom Price":
+                        try:
+                            exit_price = float(self.custom_exit_input.text())
+                        except:
+                            continue
+
+                    if exit_price is None:
+                        continue
+
+                    # Calculate PnL
+                    if position_type == "Long":
+                        price_change_percent = ((exit_price - entry_price) / entry_price) * 100
+                    else:  # Short
+                        price_change_percent = ((entry_price - exit_price) / entry_price) * 100
+
+                    pnl_percent = price_change_percent * leverage
+                    pnl_usd = (position_size * pnl_percent) / 100
+
+                    # Track statistics
+                    total_pnl += pnl_usd
+                    total_pnl_percent += pnl_percent
+                    if pnl_usd > 0:
+                        successful_trades += 1
+                    else:
+                        failed_trades += 1
+
+                    # Store result
+                    results.append({
+                        'pattern_name': pattern_dict.get('name', 'Unknown'),
+                        'entry_price': entry_price,
+                        'exit_price': exit_price,
+                        'price_change_percent': price_change_percent,
+                        'pnl_percent': pnl_percent,
+                        'pnl_usd': pnl_usd
+                    })
+
+                except Exception as e:
+                    print(f"Error calculating PnL for pattern: {e}")
+                    continue
+
+            # Close input dialog
+            dialog.close()
+
+            # Show results
+            if not results:
+                QMessageBox.information(
+                    self,
+                    "No Results",
+                    "Could not calculate PnL for any patterns. Make sure patterns have the required price data."
+                )
+                return
+
+            self.showPnLResults(results, total_pnl, total_pnl_percent, successful_trades, failed_trades,
+                              leverage, position_size, position_type)
+
+        except Exception as e:
+            QMessageBox.critical(dialog, "Calculation Error", f"Error calculating PnL: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def showPnLResults(self, results, total_pnl, total_pnl_percent, successful_trades, failed_trades,
+                      leverage, position_size, position_type):
+        """Display PnL analysis results in a dialog"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💰 PnL Analysis Results")
+        dialog.setMinimumSize(900, 600)
+        layout = QVBoxLayout()
+
+        # Summary statistics
+        summary_text = f"""
+<b>Trading Parameters:</b>
+Position Type: {position_type} | Leverage: {leverage}x | Position Size: ${position_size:.2f}
+
+<b>Summary Statistics:</b>
+Total Patterns Analyzed: {len(results)}
+Profitable Trades: {successful_trades} ({(successful_trades/len(results)*100):.1f}%)
+Losing Trades: {failed_trades} ({(failed_trades/len(results)*100):.1f}%)
+
+<b>Total PnL:</b>
+USD: ${total_pnl:.2f}
+Percent: {total_pnl_percent:.2f}%
+Average PnL per Trade: ${(total_pnl/len(results)):.2f}
+        """
+
+        summary_label = QLabel(summary_text)
+        summary_label.setStyleSheet("background-color: #f0f0f0; padding: 10px; border-radius: 5px;")
+        layout.addWidget(summary_label)
+
+        # Results table
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels([
+            "Pattern", "Entry Price", "Exit Price", "Price Change %",
+            f"PnL % ({leverage}x)", "PnL USD"
+        ])
+        table.setRowCount(len(results))
+
+        # Set font
+        font = QFont("Arial", 12)
+        table.setFont(font)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        # Populate table
+        for row, result in enumerate(results):
+            table.setItem(row, 0, QTableWidgetItem(result['pattern_name']))
+            table.setItem(row, 1, QTableWidgetItem(f"${result['entry_price']:.2f}"))
+            table.setItem(row, 2, QTableWidgetItem(f"${result['exit_price']:.2f}"))
+            table.setItem(row, 3, QTableWidgetItem(f"{result['price_change_percent']:.2f}%"))
+            table.setItem(row, 4, QTableWidgetItem(f"{result['pnl_percent']:.2f}%"))
+
+            # Color code PnL
+            pnl_item = QTableWidgetItem(f"${result['pnl_usd']:.2f}")
+            if result['pnl_usd'] > 0:
+                pnl_item.setForeground(QColor(0, 128, 0))  # Green for profit
+            else:
+                pnl_item.setForeground(QColor(255, 0, 0))  # Red for loss
+            table.setItem(row, 5, pnl_item)
+
+        layout.addWidget(table)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+
+        dialog.setLayout(layout)
+        dialog.exec()

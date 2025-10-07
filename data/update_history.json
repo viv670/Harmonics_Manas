@@ -17,8 +17,449 @@
       "candles_updated": 2,
       "error_message": null,
       "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T10:17:37.540163",
+      "symbol": "HYPEUSDT",
+      "timeframe": "4h",
+      "status": "success",
+      "candles_updated": 4,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T10:45:40.091248",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 1
+    },
+    {
+      "timestamp": "2025-10-06T10:46:40.395537",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 2
+    },
+    {
+      "timestamp": "2025-10-06T10:47:09.266242",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 1
+    },
+    {
+      "timestamp": "2025-10-06T10:48:09.514590",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 2
+    },
+    {
+      "timestamp": "2025-10-06T10:52:54.322891",
+      "symbol": "BTCUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 365,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T10:52:54.573216",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 1
+    },
+    {
+      "timestamp": "2025-10-06T10:53:55.039145",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 2
+    },
+    {
+      "timestamp": "2025-10-06T10:54:55.280477",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 3
+    },
+    {
+      "timestamp": "2025-10-06T10:55:55.530208",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "failed",
+      "candles_updated": 0,
+      "error_message": "Invalid request for BTCUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 3
+    },
+    {
+      "timestamp": "2025-10-06T10:55:55.793026",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for ETHUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 1
+    },
+    {
+      "timestamp": "2025-10-06T10:56:56.043096",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for ETHUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 2
+    },
+    {
+      "timestamp": "2025-10-06T10:57:56.291086",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "retrying",
+      "candles_updated": 0,
+      "error_message": "Invalid request for ETHUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 3
+    },
+    {
+      "timestamp": "2025-10-06T10:58:56.550982",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "failed",
+      "candles_updated": 0,
+      "error_message": "Invalid request for ETHUSDT: {\"code\":-1120,\"msg\":\"Invalid interval.\"}",
+      "retry_attempt": 3
+    },
+    {
+      "timestamp": "2025-10-06T10:58:57.019263",
+      "symbol": "ETHUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 365,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T10:59:58.375714",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 183,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T10:59:58.748657",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 183,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:17:46.495078",
+      "symbol": "HYPEUSDT",
+      "timeframe": "4h",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:20.754833",
+      "symbol": "BTCUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:34.180072",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:39.415157",
+      "symbol": "BTCUSDT",
+      "timeframe": "3d",
+      "status": "success",
+      "candles_updated": 121,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:44.512135",
+      "symbol": "ETHUSDT",
+      "timeframe": "3d",
+      "status": "success",
+      "candles_updated": 121,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:48.438769",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:27:53.612405",
+      "symbol": "ETHUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:28:05.494291",
+      "symbol": "HYPEUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 130,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:28:09.502071",
+      "symbol": "XLMUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-06T14:30:20.382350",
+      "symbol": "HYPEUSDT",
+      "timeframe": "4h",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:02.620887",
+      "symbol": "BTCUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:03.023955",
+      "symbol": "BTCUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:03.385840",
+      "symbol": "BTCUSDT",
+      "timeframe": "3d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:03.739231",
+      "symbol": "ETHUSDT",
+      "timeframe": "3d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:04.588925",
+      "symbol": "ETHUSDT",
+      "timeframe": "2d",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:04.979827",
+      "symbol": "ETHUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:06.030071",
+      "symbol": "HYPEUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:06.439660",
+      "symbol": "XLMUSDT",
+      "timeframe": "1d",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:06.864685",
+      "symbol": "BTCUSDT",
+      "timeframe": "12h",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:07.338324",
+      "symbol": "BTCUSDT",
+      "timeframe": "8h",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:09.132887",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:08:11.775159",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 1,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:46:27.386353",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T06:46:28.948804",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T07:22:09.582228",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T07:22:11.311508",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T07:52:19.526852",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T07:52:21.115487",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T08:26:42.804535",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T08:26:44.260975",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 2,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T09:50:22.845511",
+      "symbol": "BTCUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 4,
+      "error_message": null,
+      "retry_attempt": 0
+    },
+    {
+      "timestamp": "2025-10-07T09:50:24.301016",
+      "symbol": "ETHUSDT",
+      "timeframe": "30m",
+      "status": "success",
+      "candles_updated": 4,
+      "error_message": null,
+      "retry_attempt": 0
     }
   ],
-  "total_records": 2,
-  "last_updated": "2025-10-05T10:51:20.905991"
+  "total_records": 51,
+  "last_updated": "2025-10-07T09:50:24.301174"
 }
