@@ -3638,32 +3638,144 @@ class BacktestingDialog(QDialog):
             for r in completed_results if r['sl_hit']
         )
 
-        # Summary header
+        # Modern card-based summary with better organization
         summary = f"""
-        <h2>Enhanced PnL Analysis Summary</h2>
-        <p><b>Strategy:</b> Entry at D point, TP1=25% profit, TP2/TP3/etc=10% profit each, Move SL to entry after TP1</p>
-        <p><b>Position Size:</b> $100 per trade | <b>Leverage:</b> 1x | <b>Direction:</b> Long for bullish, Short for bearish</p>
-        <hr>
-        <p><b>Total Patterns Analyzed:</b> {len(results)}</p>
-        <p><b>  • Completed:</b> {len(completed_results)}</p>
-        <p><b>  • ⏳ Pending:</b> {len(pending_results)} (awaiting TP/SL hit)</p>
-        <hr>
-        <h3>Completed Trades Performance:</h3>
-        <p><b>Total P/L (Including SL Losses):</b> <span style='color: {"green" if total_profit >= 0 else "red"}; font-weight: bold;'>${total_profit:.2f}</span></p>
-        <p><b>Average P/L per Trade:</b> <span style='color: {"green" if avg_profit >= 0 else "red"}'>${avg_profit:.2f}</span></p>
-        <p><b>Average Bars to Outcome:</b> {avg_bars_to_outcome:.1f} bars</p>
-        <hr>
-        <p><b>✅ Profitable Trades:</b> {profitable_trades} ({win_rate:.1f}%)</p>
-        <p><b>❌ Losing Trades:</b> {losing_trades} ({(losing_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
-        <p><b>⚖️ Breakeven Trades:</b> {breakeven_trades} ({(breakeven_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
-        <hr>
-        <p><b>Average TPs Hit:</b> {avg_tps_hit:.1f} TPs per pattern</p>
-        <p><b>Average Bars to TP1:</b> {avg_bars_to_tp1:.1f} bars</p>
-        <hr>
-        <p><b>🛑 Stop Loss Hit:</b> {sl_hit_count} trades ({(sl_hit_count/len(completed_results)*100 if completed_results else 0):.1f}%)</p>
-        <p style='margin-left: 20px;'>• After hitting TPs: {sl_with_tps} trades</p>
-        <p style='margin-left: 20px;'>• Before hitting any TP: {sl_without_tps} trades</p>
-        <p><b>Total Loss from SL:</b> <span style='color: red;'>${total_sl_loss:.2f}</span></p>
+        <style>
+            .summary-container {{ font-family: 'Segoe UI', Arial, sans-serif; }}
+            .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+            .header h2 {{ margin: 0 0 10px 0; font-size: 24px; }}
+            .header p {{ margin: 5px 0; opacity: 0.95; font-size: 13px; }}
+
+            .card-row {{ display: flex; gap: 15px; margin-bottom: 15px; }}
+            .card {{ background: white; border: 1px solid #e0e0e0; border-radius: 8px;
+                    padding: 15px; flex: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            .card-title {{ color: #666; font-size: 12px; text-transform: uppercase;
+                          letter-spacing: 0.5px; margin-bottom: 8px; }}
+            .card-value {{ font-size: 28px; font-weight: bold; margin: 5px 0; }}
+            .card-subtitle {{ color: #999; font-size: 11px; margin-top: 5px; }}
+
+            .metric-row {{ display: flex; justify-content: space-between;
+                         padding: 8px 0; border-bottom: 1px solid #f0f0f0; }}
+            .metric-label {{ color: #666; font-size: 13px; }}
+            .metric-value {{ font-weight: 600; font-size: 13px; }}
+
+            .status-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }}
+            .status-item {{ text-align: center; padding: 12px; background: #f8f9fa; border-radius: 6px; }}
+            .status-number {{ font-size: 24px; font-weight: bold; margin: 5px 0; }}
+            .status-label {{ font-size: 11px; color: #666; text-transform: uppercase; }}
+
+            .positive {{ color: #10b981; }}
+            .negative {{ color: #ef4444; }}
+            .neutral {{ color: #6b7280; }}
+        </style>
+
+        <div class="summary-container">
+            <!-- Header -->
+            <div class="header">
+                <h2>📊 Enhanced PnL Analysis</h2>
+                <p><b>Strategy:</b> Entry at D point • TP1: 25% profit • TP2/3: 10% each • SL moves to entry after TP1</p>
+                <p><b>Position Size:</b> $100/trade • <b>Leverage:</b> 1x • <b>Direction:</b> Long (Bullish) / Short (Bearish)</p>
+            </div>
+
+            <!-- Key Metrics Cards -->
+            <div class="card-row">
+                <div class="card">
+                    <div class="card-title">Total P&L</div>
+                    <div class="card-value {"positive" if total_profit >= 0 else "negative"}">${total_profit:,.2f}</div>
+                    <div class="card-subtitle">From {len(completed_results)} completed trades</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Win Rate</div>
+                    <div class="card-value {"positive" if win_rate >= 50 else "negative"}">{win_rate:.1f}%</div>
+                    <div class="card-subtitle">{profitable_trades} wins / {losing_trades} losses</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Avg P&L/Trade</div>
+                    <div class="card-value {"positive" if avg_profit >= 0 else "negative"}">${avg_profit:.2f}</div>
+                    <div class="card-subtitle">Average per completed trade</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Avg TPs Hit</div>
+                    <div class="card-value neutral">{avg_tps_hit:.1f}</div>
+                    <div class="card-subtitle">TPs per pattern</div>
+                </div>
+            </div>
+
+            <!-- Trade Status Overview -->
+            <div class="card">
+                <div class="card-title">📈 Trade Status Overview</div>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="status-number positive">✅ {profitable_trades}</div>
+                        <div class="status-label">Profitable ({win_rate:.1f}%)</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-number negative">❌ {losing_trades}</div>
+                        <div class="status-label">Losses ({(losing_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-number neutral">⚖️ {breakeven_trades}</div>
+                        <div class="status-label">Breakeven ({(breakeven_trades/len(completed_results)*100 if completed_results else 0):.1f}%)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Metrics -->
+            <div class="card-row">
+                <div class="card">
+                    <div class="card-title">⏱️ Timing Metrics</div>
+                    <div class="metric-row">
+                        <span class="metric-label">Avg Bars to Outcome</span>
+                        <span class="metric-value">{avg_bars_to_outcome:.1f}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Avg Bars to TP1</span>
+                        <span class="metric-value">{avg_bars_to_tp1:.1f}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🛑 Stop Loss Analysis</div>
+                    <div class="metric-row">
+                        <span class="metric-label">SL Hit Count</span>
+                        <span class="metric-value negative">{sl_hit_count} ({(sl_hit_count/len(completed_results)*100 if completed_results else 0):.1f}%)</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">• After hitting TPs</span>
+                        <span class="metric-value">{sl_with_tps}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">• Before any TP</span>
+                        <span class="metric-value">{sl_without_tps}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Total Loss from SL</span>
+                        <span class="metric-value negative">${total_sl_loss:.2f}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patterns Summary -->
+            <div class="card">
+                <div class="card-title">📋 Patterns Summary</div>
+                <div class="metric-row">
+                    <span class="metric-label">Total Patterns Analyzed</span>
+                    <span class="metric-value">{len(results)}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">✅ Completed</span>
+                    <span class="metric-value">{len(completed_results)}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">⏳ Pending (awaiting TP/SL)</span>
+                    <span class="metric-value neutral">{len(pending_results)}</span>
+                </div>
+            </div>
+        </div>
         """
 
         summary_label = QLabel(summary)
