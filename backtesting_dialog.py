@@ -249,6 +249,9 @@ class BacktestingDialog(QDialog):
         self.setMinimumSize(1000, 600)  # Minimum size
         self.resize(1400, 800)  # Default size (larger for better viewing)
 
+        # Enable maximize button
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+
         # Chart display variables
         self.current_chart_category = None
         self.current_chart_index = 0
@@ -326,7 +329,8 @@ class BacktestingDialog(QDialog):
         # Create PlotWidget ONCE with the date axis
         self.pattern_chart = pg.PlotWidget(axisItems={'bottom': self.date_axis})
         self.pattern_chart.setBackground('w')
-        self.pattern_chart.showGrid(x=True, y=True, alpha=0.3)
+        # Grid lines removed for cleaner chart appearance
+        self.pattern_chart.showGrid(x=False, y=False)
         self.pattern_chart.setLabel('left', 'Price')
         self.pattern_chart.setMinimumSize(700, 500)
 
