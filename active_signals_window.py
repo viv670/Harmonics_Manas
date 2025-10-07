@@ -138,6 +138,16 @@ class ActiveSignalsWindow(QMainWindow):
         filter_group.setLayout(filter_layout)
         main_layout.addWidget(filter_group)
 
+        # Remove from Monitoring button (below filters)
+        remove_btn_layout = QHBoxLayout()
+        self.delete_btn = QPushButton("🗑️ Remove from Monitoring")
+        self.delete_btn.clicked.connect(self.deleteSignal)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet("QPushButton { background-color: #FFCDD2; color: #C62828; font-weight: bold; padding: 8px; }")
+        remove_btn_layout.addWidget(self.delete_btn)
+        remove_btn_layout.addStretch()
+        main_layout.addLayout(remove_btn_layout)
+
         # Splitter for table and details
         splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -218,18 +228,6 @@ class ActiveSignalsWindow(QMainWindow):
 
         details_layout.addLayout(right_layout, 1)
 
-        # Action buttons
-        button_layout = QHBoxLayout()
-
-        self.delete_btn = QPushButton("🗑️ Remove from Monitoring")
-        self.delete_btn.clicked.connect(self.deleteSignal)
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setStyleSheet("QPushButton { background-color: #FFCDD2; color: #C62828; font-weight: bold; }")
-        button_layout.addWidget(self.delete_btn)
-
-        button_layout.addStretch()
-
-        details_layout.addLayout(button_layout)
         details_group.setLayout(details_layout)
 
         splitter.addWidget(details_group)
