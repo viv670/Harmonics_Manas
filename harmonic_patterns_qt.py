@@ -1206,6 +1206,7 @@ class AllPatternsWindow(QMainWindow):
 
         self.setWindowTitle("All Patterns Viewer")
         self.setGeometry(200, 200, 1400, 900)
+        self.showMaximized()  # Open maximized by default
 
         self.initUI()
 
@@ -1949,6 +1950,7 @@ class PatternViewerWindow(QMainWindow):
         """Initialize the pattern viewer window UI"""
         self.setWindowTitle("Pattern Viewer")
         self.setGeometry(150, 150, 1200, 800)
+        self.showMaximized()  # Open maximized by default
 
         # Initialize custom Fibonacci levels (will be populated from input field)
         self.custom_fib_levels = None
@@ -3588,6 +3590,7 @@ class HarmonicPatternDetector(QMainWindow):
         """Initialize the user interface"""
         self.setWindowTitle("Harmonic Pattern Detection System - PyQt6")
         self.setGeometry(100, 100, 1400, 900)
+        self.showMaximized()  # Open maximized by default
 
         # Create central widget and layout
         central_widget = QWidget()
@@ -5709,6 +5712,7 @@ class HarmonicPatternDetector(QMainWindow):
             self.watchlist_window = QDialog(self)
             self.watchlist_window.setWindowTitle("Watchlist & Auto-Update Manager")
             self.watchlist_window.setGeometry(200, 100, 1000, 600)
+            self.watchlist_window.showMaximized()  # Open maximized by default
 
             # Set window layout
             layout = QVBoxLayout()

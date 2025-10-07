@@ -155,6 +155,7 @@ class PatternChartWindow(QMainWindow):
 
         self.setWindowTitle(f"Pattern Chart - {self.signal['symbol']} {self.signal['timeframe']} - {pattern_name} {direction}")
         self.setGeometry(100, 100, 1400, 900)
+        self.showMaximized()  # Open maximized by default
 
         # Central widget
         central_widget = QWidget()

@@ -60,6 +60,7 @@ class ActiveSignalsWindow(QMainWindow):
         """Initialize the user interface"""
         self.setWindowTitle("Active Trading Signals")
         self.setGeometry(100, 100, 1400, 900)  # Increased window size for better visibility
+        self.showMaximized()  # Open maximized by default
 
         # Central widget
         central_widget = QWidget()
@@ -138,16 +139,6 @@ class ActiveSignalsWindow(QMainWindow):
         filter_group.setLayout(filter_layout)
         main_layout.addWidget(filter_group)
 
-        # Remove from Monitoring button (below filters)
-        remove_btn_layout = QHBoxLayout()
-        self.delete_btn = QPushButton("🗑️ Remove from Monitoring")
-        self.delete_btn.clicked.connect(self.deleteSignal)
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setStyleSheet("QPushButton { background-color: #FFCDD2; color: #C62828; font-weight: bold; padding: 8px; }")
-        remove_btn_layout.addWidget(self.delete_btn)
-        remove_btn_layout.addStretch()
-        main_layout.addLayout(remove_btn_layout)
-
         # Splitter for table and details
         splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -199,6 +190,19 @@ class ActiveSignalsWindow(QMainWindow):
 
         splitter.addWidget(self.signals_table)
 
+        # Remove from Monitoring button (just above Signal Details)
+        button_container = QWidget()
+        remove_btn_layout = QHBoxLayout()
+        remove_btn_layout.setContentsMargins(5, 5, 5, 5)
+        self.delete_btn = QPushButton("🗑️ Remove from Monitoring")
+        self.delete_btn.clicked.connect(self.deleteSignal)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet("QPushButton { background-color: #FFCDD2; color: #C62828; font-weight: bold; padding: 8px; }")
+        remove_btn_layout.addWidget(self.delete_btn)
+        remove_btn_layout.addStretch()
+        button_container.setLayout(remove_btn_layout)
+        splitter.addWidget(button_container)
+
         # Signal details - Use horizontal split for better space usage
         details_group = QGroupBox("Signal Details & Price Alerts")
         details_layout = QHBoxLayout()
@@ -231,8 +235,9 @@ class ActiveSignalsWindow(QMainWindow):
         details_group.setLayout(details_layout)
 
         splitter.addWidget(details_group)
-        splitter.setStretchFactor(0, 2)  # Table gets less space
-        splitter.setStretchFactor(1, 2)  # Details gets equal space - no more scrolling!
+        splitter.setStretchFactor(0, 3)  # Table gets more space
+        splitter.setStretchFactor(1, 0)  # Button container minimal space
+        splitter.setStretchFactor(2, 2)  # Details gets equal space
 
         main_layout.addWidget(splitter)
 

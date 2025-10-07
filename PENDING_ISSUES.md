@@ -302,3 +302,37 @@ Integrate historical backtesting statistics into the live Active Trading Signals
 **Date Created**: 2025-10-06
 **Priority**: Medium-High - Powerful feature for trading decisions, but depends on completing Issues #5 and #6 first
 
+---
+
+## 8. BacktestingDialog Does Not Open in Maximized Mode
+
+**Status**: NOT RESOLVED - Low priority
+
+**Description**:
+BacktestingDialog window does not open in maximized mode by default, despite having the maximize functionality implemented. All other windows (ActiveSignalsWindow, PatternChartWindow, AllPatternsWindow, PatternViewerWindow, Main window, Watchlist dialog) open maximized correctly.
+
+**Current Implementation**:
+- `setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)` added
+- `QTimer.singleShot(0, self.showMaximized)` called after `initUI()` in `__init__`
+- QTimer imported in backtesting_dialog.py
+
+**Investigation**:
+The issue is likely related to how QDialog behaves differently from QMainWindow when `.show()` is called from the parent window (harmonic_patterns_qt.py line 5925). The parent calls `self.backtesting_dialog.show()` which may override the internal `showMaximized()` call.
+
+**Attempted Fixes**:
+1. Called `showMaximized()` directly after `initUI()` - didn't work
+2. Used `QTimer.singleShot(0, self.showMaximized)` to delay maximize - didn't work
+3. Both maximize button and window flags are correctly set
+
+**Possible Solutions** (not yet attempted):
+1. Override the `show()` method in BacktestingDialog to call `showMaximized()` instead
+2. Change the parent window to call `showMaximized()` instead of `show()`
+3. Use `exec()` or different dialog show mode
+4. Convert to QMainWindow instead of QDialog
+
+**Files Modified**:
+- backtesting_dialog.py: Lines 12 (QTimer import), 253 (window flags), 268 (showMaximized call)
+
+**Date Created**: 2025-10-07
+**Priority**: Low - User can manually maximize; does not affect functionality
+
