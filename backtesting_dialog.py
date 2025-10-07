@@ -1279,8 +1279,9 @@ class BacktestingDialog(QDialog):
         # Store stats for export
         self.last_stats = stats
 
-        # Automatically export to Excel after successful backtest
-        self.autoExportToExcel(stats)
+        # Excel export removed from auto-save - user must click Export button
+        # Display message to inform user
+        self.results_text.append("\n✅ Backtest complete! Click 'Export Results' button to save to Excel.")
 
         # Update UI
         self.run_button.setEnabled(True)
@@ -1322,8 +1323,8 @@ class BacktestingDialog(QDialog):
         self.cleanupThread()
         event.accept()
 
-    def autoExportToExcel(self, stats):
-        """Automatically export backtest results to Excel in the backtest_results folder"""
+    def autoExportToExcel(self, stats, show_dialog=True):
+        """Export backtest results to Excel in the backtest_results folder"""
         try:
             # Create backtest_results folder if it doesn't exist
             results_dir = os.path.join(os.path.dirname(__file__), 'backtest_results')
@@ -1418,35 +1419,39 @@ class BacktestingDialog(QDialog):
             # Store Excel filename for chart generation
             self.last_excel_file = filename
 
-            # Add success message
-            self.results_text.append(f"\n✅ Results automatically saved to:")
+            # Add success message to results text
+            self.results_text.append(f"\n✅ Excel exported successfully:")
             self.results_text.append(f"   {filename}")
             self.results_text.append(f"   📊 Sheets: Summary, Pattern Details, Pattern Performance, Fib & Harmonic Analysis")
 
+            # Show dialog if requested (when user clicks Export button)
+            if show_dialog:
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"Results exported to Excel:\n\n{filename}\n\n"
+                    f"Sheets included:\n"
+                    f"• Summary\n"
+                    f"• Pattern Details\n"
+                    f"• Pattern Performance\n"
+                    f"• Fib & Harmonic Analysis"
+                )
+
         except Exception as e:
-            # Don't show error dialog, just log to results
-            self.results_text.append(f"\n⚠️ Could not auto-save Excel: {str(e)}")
+            # Show error with appropriate handling
+            error_msg = f"Could not export Excel: {str(e)}"
+            self.results_text.append(f"\n⚠️ {error_msg}")
+            if show_dialog:
+                QMessageBox.critical(self, "Export Error", error_msg)
 
     def exportResults(self):
-        """Export backtest results to CSV"""
+        """Export backtest results to Excel (only when user clicks Export button)"""
         if not hasattr(self, 'last_stats'):
-            QMessageBox.warning(self, "No Results", "No results to export.")
+            QMessageBox.warning(self, "No Results", "No results to export. Please run a backtest first.")
             return
 
-        try:
-            # Create results DataFrame
-            results_df = pd.DataFrame([self.last_stats])
-
-            # Save to CSV with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"backtest_results_{timestamp}.csv"
-            results_df.to_csv(filename, index=False)
-
-            QMessageBox.information(self, "Export Complete", f"Results exported to {filename}")
-            self.results_text.append(f"\n📁 Results exported to {filename}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"Failed to export results:\n{str(e)}")
+        # Call the Excel export function
+        self.autoExportToExcel(self.last_stats)
 
     def loadCategoryCharts(self, category):
         """Load all charts for a specific completion category using pattern tracker data"""
