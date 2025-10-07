@@ -113,7 +113,7 @@ class SignalDatabase:
             )
         ''')
 
-        # Create index for faster queries
+        # Create comprehensive indices for faster queries
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_symbol_status
             ON signals(symbol, status)
@@ -122,6 +122,36 @@ class SignalDatabase:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_status
             ON signals(status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_symbol_timeframe
+            ON signals(symbol, timeframe)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_status_created
+            ON signals(status, detected_at DESC)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_pattern_type
+            ON signals(pattern_type, pattern_name)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_timeframe
+            ON signals(timeframe)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_direction_status
+            ON signals(direction, status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_last_updated
+            ON signals(last_updated DESC)
         ''')
 
         # Create price_alerts table for individual price level alerts

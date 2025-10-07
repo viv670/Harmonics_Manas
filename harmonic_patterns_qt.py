@@ -39,6 +39,12 @@ from toast_notification import ToastManager
 # Pattern monitoring modules
 from active_signals_window import ActiveSignalsWindow
 
+# Pattern cache for performance
+from pattern_cache import get_pattern_cache
+
+# Parallel pattern detection
+from parallel_pattern_detector import detect_patterns_parallel
+
 # PRZ Pattern color mapping for better visual identification
 PRZ_PATTERN_COLORS = {
     '1a': '#FF0000',    # Red
@@ -293,7 +299,19 @@ class PatternDetectionWorker(QThread):
         self.time = time  # Import time module for debugging
 
     def run(self):
-        """Run pattern detection in background"""
+        """Run pattern detection in background (with optional parallel mode)"""
+        # Check if parallel mode is enabled (default: True for better performance)
+        use_parallel = getattr(self.main_window, 'use_parallel_detection', True) if self.main_window else True
+
+        if use_parallel and len(self.pattern_types) > 1:
+            # Use parallel detection for multiple pattern types
+            self._run_parallel()
+        else:
+            # Use sequential detection (original method)
+            self._run_sequential()
+
+    def _run_sequential(self):
+        """Sequential pattern detection (original method)"""
         results = {
             'abcd': [],
             'xabcd': [],
@@ -305,7 +323,7 @@ class PatternDetectionWorker(QThread):
         }
 
         try:
-            if DEBUG_MODE: print(f"Starting pattern detection with types: {self.pattern_types}")
+            if DEBUG_MODE: print(f"Starting SEQUENTIAL pattern detection with types: {self.pattern_types}")
             if DEBUG_MODE: print(f"Number of extremum points: {len(self.extremum_points)}")
 
             # Detect patterns based on selected types
@@ -401,8 +419,108 @@ class PatternDetectionWorker(QThread):
             print(traceback.format_exc())
             self.status.emit(f"Error: {str(e)}")
 
+    def _run_parallel(self):
+        """Parallel pattern detection for maximum performance"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time as _time
+
+        if DEBUG_MODE: print(f"Starting PARALLEL pattern detection with types: {self.pattern_types}")
+        if DEBUG_MODE: print(f"Number of extremum points: {len(self.extremum_points)}")
+
+        results = {
+            'abcd': [],
+            'xabcd': [],
+            'formed_abcd': [],
+            'comprehensive_abcd': [],
+            'comprehensive_xabcd': [],
+            'unformed': [],
+            'unformed_xabcd': []
+        }
+
+        # Map pattern types to detection methods
+        detection_map = {}
+        if 'abcd' in self.pattern_types:
+            detection_map['abcd'] = self.detect_abcd_patterns
+        if 'formed_abcd' in self.pattern_types:
+            detection_map['formed_abcd'] = self.detect_formed_abcd_patterns
+        if 'comprehensive_abcd' in self.pattern_types:
+            detection_map['comprehensive_abcd'] = self.detect_comprehensive_abcd_patterns
+        if 'comprehensive_xabcd' in self.pattern_types:
+            detection_map['comprehensive_xabcd'] = self.detect_comprehensive_xabcd_patterns
+        if 'xabcd' in self.pattern_types:
+            detection_map['xabcd'] = self.detect_xabcd_patterns
+        if 'formed_xabcd' in self.pattern_types:
+            detection_map['formed_xabcd'] = self.detect_formed_xabcd_patterns
+        if 'unstrict_abcd' in self.pattern_types:
+            detection_map['unformed'] = self.detect_unformed_patterns
+        if 'unstrict_xabcd' in self.pattern_types:
+            detection_map['unformed_xabcd'] = self.detect_unformed_xabcd_patterns
+
+        start_time = _time.time()
+        completed_count = 0
+        total_tasks = len(detection_map)
+
+        try:
+            # Run all detection tasks in parallel
+            with ThreadPoolExecutor(max_workers=min(4, total_tasks)) as executor:
+                future_to_type = {}
+
+                # Submit all tasks
+                for pattern_type, detection_method in detection_map.items():
+                    self.status.emit(f"Starting {pattern_type.replace('_', ' ').title()}...")
+                    future = executor.submit(detection_method)
+                    future_to_type[future] = pattern_type
+
+                # Collect results as they complete
+                for future in as_completed(future_to_type):
+                    pattern_type = future_to_type[future]
+
+                    try:
+                        patterns = future.result()
+                        results[pattern_type] = patterns if patterns else []
+
+                        completed_count += 1
+                        progress = int((completed_count / total_tasks) * 100)
+                        self.progress.emit(progress)
+
+                        self.status.emit(f"Completed {pattern_type.replace('_', ' ').title()}: {len(results[pattern_type])} patterns")
+                        if DEBUG_MODE:
+                            print(f"✓ {pattern_type}: {len(results[pattern_type])} patterns")
+
+                    except Exception as e:
+                        if DEBUG_MODE:
+                            print(f"✗ {pattern_type} failed: {e}")
+                        results[pattern_type] = []
+
+            # Validate results
+            for ptype, plist in results.items():
+                if not isinstance(plist, list):
+                    if DEBUG_MODE: print(f"Warning: {ptype} is not a list: {type(plist)}")
+                    results[ptype] = []
+                else:
+                    valid_patterns = [p for p in plist if isinstance(p, dict)]
+                    results[ptype] = valid_patterns
+
+            elapsed = _time.time() - start_time
+            total_patterns = sum(len(p) for p in results.values())
+
+            if DEBUG_MODE:
+                print(f"\n✅ Parallel detection complete in {elapsed:.2f}s")
+                print(f"   Total patterns: {total_patterns}")
+                for pattern_type, patterns in results.items():
+                    if patterns:
+                        print(f"   - {pattern_type}: {len(patterns)}")
+
+            self.finished.emit(results)
+
+        except Exception as e:
+            import traceback
+            if DEBUG_MODE: print(f"Error in parallel pattern detection: {str(e)}")
+            print(traceback.format_exc())
+            self.status.emit(f"Error: {str(e)}")
+
     def detect_abcd_patterns(self):
-        """Detect Formed ABCD patterns"""
+        """Detect Formed ABCD patterns with caching"""
         # Get search window value
         max_window = self.get_search_window(len(self.extremum_points))
 
@@ -415,7 +533,22 @@ class PatternDetectionWorker(QThread):
             limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
             max_pats = 100
 
-        return detect_formed_abcd_patterns(
+        # Try cache first
+        cache = get_pattern_cache()
+        cached_patterns = cache.get(
+            limited_extremum_points,
+            self.data,
+            'formed_abcd',
+            max_window=max_window,
+            max_pats=max_pats,
+            validate_d_crossing=self.validate_d_crossing
+        )
+
+        if cached_patterns is not None:
+            return cached_patterns
+
+        # Cache miss - detect patterns
+        patterns = detect_formed_abcd_patterns(
             limited_extremum_points,
             df=self.data,
             log_details=False,
@@ -423,6 +556,19 @@ class PatternDetectionWorker(QThread):
             max_search_window=max_window,
             validate_d_crossing=self.validate_d_crossing
         )
+
+        # Cache the results
+        cache.set(
+            limited_extremum_points,
+            self.data,
+            'formed_abcd',
+            patterns,
+            max_window=max_window,
+            max_pats=max_pats,
+            validate_d_crossing=self.validate_d_crossing
+        )
+
+        return patterns
 
     def get_search_window(self, dataset_size):
         """Get search window value based on GUI setting or auto-detection"""
@@ -446,7 +592,7 @@ class PatternDetectionWorker(QThread):
             return 20
 
     def detect_formed_abcd_patterns(self):
-        """Detect Formed ABCD patterns with price containment validation"""
+        """Detect Formed ABCD patterns with price containment validation (CACHED)"""
         # Get search window value
         max_window = self.get_search_window(len(self.extremum_points))
 
@@ -469,7 +615,16 @@ class PatternDetectionWorker(QThread):
                 limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
                 max_pats = 100
 
-        return detect_formed_abcd_patterns(
+        # Try cache first
+        cache = get_pattern_cache()
+        cached = cache.get(limited_extremum_points, self.data, 'formed_abcd_strict',
+                          max_window=max_window, max_pats=max_pats,
+                          validate_d_crossing=self.validate_d_crossing)
+        if cached is not None:
+            return cached
+
+        # Detect patterns
+        patterns = detect_formed_abcd_patterns(
             limited_extremum_points,
             self.data,
             log_details=False,
@@ -477,6 +632,13 @@ class PatternDetectionWorker(QThread):
             max_search_window=max_window,
             validate_d_crossing=self.validate_d_crossing
         )
+
+        # Cache results
+        cache.set(limited_extremum_points, self.data, 'formed_abcd_strict', patterns,
+                 max_window=max_window, max_pats=max_pats,
+                 validate_d_crossing=self.validate_d_crossing)
+
+        return patterns
 
     def detect_formed_xabcd_patterns(self):
         """Detect Formed XABCD patterns with price containment validation"""
@@ -651,7 +813,7 @@ class PatternDetectionWorker(QThread):
         return filtered
 
     def detect_unformed_patterns(self):
-        """Detect Unformed ABCD patterns"""
+        """Detect Unformed ABCD patterns (CACHED)"""
         # Get search window value
         max_window = self.get_search_window(len(self.extremum_points))
 
@@ -666,13 +828,27 @@ class PatternDetectionWorker(QThread):
                 # Limit extremum points for performance
                 limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
 
+        # Try cache first
+        cache = get_pattern_cache()
+        cached = cache.get(limited_extremum_points, self.data, 'unformed_abcd',
+                          max_window=max_window)
+        if cached is not None:
+            return cached
+
+        # Detect patterns
         patterns = detect_unformed_abcd_patterns(
             limited_extremum_points,
             df=self.data,
             log_details=False,
             max_search_window=max_window
         )
-        return self.filter_unformed_patterns(patterns, is_xabcd=False)
+        filtered = self.filter_unformed_patterns(patterns, is_xabcd=False)
+
+        # Cache filtered results
+        cache.set(limited_extremum_points, self.data, 'unformed_abcd', filtered,
+                 max_window=max_window)
+
+        return filtered
 
     def detect_comprehensive_abcd_patterns(self):
         """Detect Comprehensive ABCD patterns (strict unformed only)"""
@@ -788,7 +964,7 @@ class PatternDetectionWorker(QThread):
         return unformed_filtered
 
     def detect_unformed_xabcd_patterns(self):
-        """Detect Unformed XABCD patterns"""
+        """Detect Unformed XABCD patterns (CACHED)"""
         # Get search window value from GUI
         max_window = self.get_search_window(len(self.extremum_points))
 
@@ -807,6 +983,13 @@ class PatternDetectionWorker(QThread):
             else:
                 limited_extremum_points = self.extremum_points[-200:] if len(self.extremum_points) > 200 else self.extremum_points
                 max_pats = 100
+
+        # Try cache first
+        cache = get_pattern_cache()
+        cached = cache.get(limited_extremum_points, self.data, 'unformed_xabcd',
+                          max_window=max_window, max_pats=max_pats)
+        if cached is not None:
+            return cached
 
         print(f"Detecting Unformed XABCD patterns with {len(limited_extremum_points)} points (limited from {len(self.extremum_points)})")
         extremums_to_use = limited_extremum_points
@@ -845,7 +1028,13 @@ class PatternDetectionWorker(QThread):
             patterns = []
 
         print(f"Found {len(patterns)} Unformed XABCD patterns")
-        return self.filter_unformed_patterns(patterns, is_xabcd=True)
+        filtered = self.filter_unformed_patterns(patterns, is_xabcd=True)
+
+        # Cache the filtered results
+        cache.set(limited_extremum_points, self.data, 'unformed_xabcd', filtered,
+                 max_window=max_window, max_pats=max_pats)
+
+        return filtered
 
 
 class AllPatternsWindow(QMainWindow):
