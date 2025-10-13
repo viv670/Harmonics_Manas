@@ -101,9 +101,10 @@ print("ABCD pattern detection loaded")
 
 # Import XABCD pattern detection from renamed files
 from unformed_xabcd import detect_strict_unformed_xabcd_patterns as detect_comprehensive_unformed_xabcd
-from formed_xabcd import detect_xabcd_patterns as detect_formed_xabcd_func
+# Updated to use smart adaptive XABCD detection (O(n³) for large datasets, original for small)
+from xabcd_detection import detect_xabcd_patterns_smart as detect_formed_xabcd_func
 from backtesting_dialog import BacktestingDialog
-print("Comprehensive XABCD pattern detection loaded")
+print("Comprehensive XABCD pattern detection loaded (with adaptive O(n³) optimization)")
 
 # Set up function aliases for compatibility
 detect_unformed_abcd_patterns = detect_comprehensive_unformed_abcd
@@ -551,7 +552,7 @@ class PatternDetectionWorker(QThread):
         patterns = detect_formed_abcd_patterns(
             limited_extremum_points,
             df=self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             max_patterns=max_pats,
             max_search_window=max_window,
             validate_d_crossing=self.validate_d_crossing
@@ -627,7 +628,7 @@ class PatternDetectionWorker(QThread):
         patterns = detect_formed_abcd_patterns(
             limited_extremum_points,
             self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             max_patterns=max_pats,
             max_search_window=max_window,
             validate_d_crossing=self.validate_d_crossing
@@ -673,7 +674,7 @@ class PatternDetectionWorker(QThread):
         result = detect_formed_xabcd_patterns(
             limited_extremum_points,
             df=self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             strict_validation=True,  # Enable price containment
             validate_d_crossing=self.validate_d_crossing
         )
@@ -700,7 +701,7 @@ class PatternDetectionWorker(QThread):
         return detect_formed_xabcd_patterns(
             limited_extremum_points,
             df=self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             strict_validation=True  # Enable price containment
         )
 
@@ -839,7 +840,7 @@ class PatternDetectionWorker(QThread):
         patterns = detect_unformed_abcd_patterns(
             limited_extremum_points,
             df=self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             max_search_window=max_window
         )
         filtered = self.filter_unformed_patterns(patterns, is_xabcd=False)
@@ -949,7 +950,7 @@ class PatternDetectionWorker(QThread):
         unformed_patterns = detect_comprehensive_unformed_xabcd(
             limited_extremum_points,
             self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             max_patterns=max_pats,
             max_search_window=max_window,
             strict_validation=True  # Use strict validation for 100% accuracy
@@ -1014,7 +1015,7 @@ class PatternDetectionWorker(QThread):
 
         patterns = detect_comprehensive_unformed_xabcd(
             extremums_to_use, self.data,
-            log_details=False,
+            log_details=True,  # Enable console logging for progress visibility
             max_patterns=max_pats if 'max_pats' in locals() else 100,
             max_search_window=max_window if 'max_window' in locals() else 20,
             strict_validation=True
@@ -4125,6 +4126,23 @@ class HarmonicPatternDetector(QMainWindow):
         active_signals_action.triggered.connect(self.openActiveSignals)
         tools_menu.addAction(active_signals_action)
 
+        # Database menu
+        database_menu = menubar.addMenu('Database')
+
+        backup_action = QAction('💾 Create Backup', self)
+        backup_action.triggered.connect(self.createDatabaseBackup)
+        database_menu.addAction(backup_action)
+
+        restore_action = QAction('📂 Restore from Backup', self)
+        restore_action.triggered.connect(self.restoreDatabaseBackup)
+        database_menu.addAction(restore_action)
+
+        database_menu.addSeparator()
+
+        manage_backups_action = QAction('📋 Manage Backups', self)
+        manage_backups_action.triggered.connect(self.manageBackups)
+        database_menu.addAction(manage_backups_action)
+
         # Help menu
         help_menu = menubar.addMenu('Help')
 
@@ -5951,6 +5969,242 @@ class HarmonicPatternDetector(QMainWindow):
 
         self.stats_text.setText("\n".join(stats))
 
+    def createDatabaseBackup(self):
+        """Create a manual backup of the database"""
+        from database_backup import DatabaseBackup
+        from PyQt6.QtWidgets import QInputDialog
+
+        # Ask user for backup description
+        description, ok = QInputDialog.getText(
+            self,
+            "Create Database Backup",
+            "Enter a description for this backup (optional):"
+        )
+
+        if ok:  # User clicked OK (even if description is empty)
+            backup_system = DatabaseBackup()
+            backup_path = backup_system.create_backup(description=description)
+
+            if backup_path:
+                QMessageBox.information(
+                    self,
+                    "Backup Created",
+                    f"Database backup created successfully!\n\nFile: {os.path.basename(backup_path)}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Backup Failed",
+                    "Failed to create database backup. Check console for details."
+                )
+
+    def restoreDatabaseBackup(self):
+        """Restore database from a backup file"""
+        from database_backup import DatabaseBackup
+
+        backup_system = DatabaseBackup()
+        backups = backup_system.list_backups()
+
+        if not backups:
+            QMessageBox.information(
+                self,
+                "No Backups Found",
+                "No backup files found.\n\nCreate a backup first using Database → Create Backup."
+            )
+            return
+
+        # Show backup selection dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Restore Database Backup")
+        dialog.resize(700, 400)
+
+        layout = QVBoxLayout()
+
+        # Info label
+        info_label = QLabel(
+            "⚠️  <b>Warning:</b> Restoring will replace your current database with the selected backup.<br>"
+            "A safety backup of your current database will be created first."
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # Backup list
+        backup_table = QTableWidget()
+        backup_table.setColumnCount(4)
+        backup_table.setHorizontalHeaderLabels(['Filename', 'Created', 'Size (MB)', 'Description'])
+        backup_table.setRowCount(len(backups))
+        backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        backup_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+
+        for row, backup in enumerate(backups):
+            backup_table.setItem(row, 0, QTableWidgetItem(backup['filename']))
+            backup_table.setItem(row, 1, QTableWidgetItem(backup['created'].strftime('%Y-%m-%d %H:%M:%S')))
+            backup_table.setItem(row, 2, QTableWidgetItem(f"{backup['size_mb']:.2f}"))
+            backup_table.setItem(row, 3, QTableWidgetItem(backup['description']))
+
+        backup_table.resizeColumnsToContents()
+        layout.addWidget(backup_table)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        restore_btn = QPushButton("Restore Selected")
+        cancel_btn = QPushButton("Cancel")
+
+        button_layout.addWidget(restore_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+
+        def on_restore():
+            selected_rows = backup_table.selectedItems()
+            if not selected_rows:
+                QMessageBox.warning(dialog, "No Selection", "Please select a backup to restore.")
+                return
+
+            selected_row = backup_table.currentRow()
+            backup_filename = backups[selected_row]['filename']
+
+            # Confirm restore
+            reply = QMessageBox.question(
+                dialog,
+                "Confirm Restore",
+                f"Are you sure you want to restore from:\n\n{backup_filename}\n\n"
+                "This will replace your current database.\n"
+                "A safety backup will be created first.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                success = backup_system.restore_backup(backup_filename)
+
+                if success:
+                    QMessageBox.information(
+                        dialog,
+                        "Restore Complete",
+                        "Database restored successfully!\n\nPlease restart the application for changes to take effect."
+                    )
+                    dialog.accept()
+                else:
+                    QMessageBox.warning(
+                        dialog,
+                        "Restore Failed",
+                        "Failed to restore database. Check console for details."
+                    )
+
+        restore_btn.clicked.connect(on_restore)
+        cancel_btn.clicked.connect(dialog.reject)
+
+        dialog.exec()
+
+    def manageBackups(self):
+        """Open backup management dialog"""
+        from database_backup import DatabaseBackup
+
+        backup_system = DatabaseBackup()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Manage Database Backups")
+        dialog.resize(800, 500)
+
+        layout = QVBoxLayout()
+
+        # Info section
+        info_layout = QHBoxLayout()
+        info_label = QLabel("📦 Database Backup Management")
+        info_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        info_layout.addWidget(info_label)
+        info_layout.addStretch()
+
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh")
+        info_layout.addWidget(refresh_btn)
+        layout.addLayout(info_layout)
+
+        # Backup list table
+        backup_table = QTableWidget()
+        backup_table.setColumnCount(5)
+        backup_table.setHorizontalHeaderLabels(['Filename', 'Created', 'Size (MB)', 'Signals', 'Description'])
+        backup_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        backup_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        layout.addWidget(backup_table)
+
+        def load_backups():
+            backups = backup_system.list_backups()
+            backup_table.setRowCount(len(backups))
+
+            for row, backup in enumerate(backups):
+                backup_table.setItem(row, 0, QTableWidgetItem(backup['filename']))
+                backup_table.setItem(row, 1, QTableWidgetItem(backup['created'].strftime('%Y-%m-%d %H:%M:%S')))
+                backup_table.setItem(row, 2, QTableWidgetItem(f"{backup['size_mb']:.2f}"))
+                backup_table.setItem(row, 3, QTableWidgetItem(str(backup['signal_count'])))
+                backup_table.setItem(row, 4, QTableWidgetItem(backup['description']))
+
+            backup_table.resizeColumnsToContents()
+
+        load_backups()
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        create_btn = QPushButton("💾 Create Backup")
+        create_btn.clicked.connect(lambda: (self.createDatabaseBackup(), load_backups()))
+
+        delete_btn = QPushButton("🗑️ Delete Selected")
+
+        def delete_selected():
+            selected_row = backup_table.currentRow()
+            if selected_row < 0:
+                QMessageBox.warning(dialog, "No Selection", "Please select a backup to delete.")
+                return
+
+            backups = backup_system.list_backups()
+            backup_filename = backups[selected_row]['filename']
+
+            reply = QMessageBox.question(
+                dialog,
+                "Confirm Delete",
+                f"Are you sure you want to delete:\n\n{backup_filename}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                if backup_system.delete_backup(backup_filename):
+                    QMessageBox.information(dialog, "Success", "Backup deleted successfully!")
+                    load_backups()
+                else:
+                    QMessageBox.warning(dialog, "Error", "Failed to delete backup.")
+
+        delete_btn.clicked.connect(delete_selected)
+
+        cleanup_btn = QPushButton("🧹 Cleanup Old Backups")
+
+        def cleanup_old():
+            deleted = backup_system.cleanup_old_backups(days_to_keep=30, max_backups=50)
+            QMessageBox.information(
+                dialog,
+                "Cleanup Complete",
+                f"Deleted {deleted} old backup(s).\n\nKeeping backups from last 30 days (max 50 backups)."
+            )
+            load_backups()
+
+        cleanup_btn.clicked.connect(cleanup_old)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+
+        button_layout.addWidget(create_btn)
+        button_layout.addWidget(delete_btn)
+        button_layout.addWidget(cleanup_btn)
+        button_layout.addStretch()
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+
+        refresh_btn.clicked.connect(load_backups)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+
     def closeEvent(self, event):
         """Handle application close event - ensure proper cleanup"""
         try:
@@ -6004,6 +6258,13 @@ def main():
     # Create and show main window
     window = HarmonicPatternDetector()
     window.showMaximized()  # Show window maximized by default
+
+    # Create automatic backup on startup (runs in background)
+    try:
+        from database_backup import auto_backup
+        auto_backup()  # Creates backup if 24+ hours since last one
+    except Exception as e:
+        print(f"⚠️  Auto-backup failed: {e}")
 
     try:
         sys.exit(app.exec())

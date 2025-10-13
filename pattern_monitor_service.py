@@ -19,7 +19,8 @@ from pathlib import Path
 
 # Import detection modules
 from extremum import detect_extremum_points
-from formed_xabcd import detect_xabcd_patterns
+# Updated to use smart adaptive XABCD detection (O(n³) for large datasets, original for small)
+from xabcd_detection import detect_xabcd_patterns_smart as detect_xabcd_patterns
 from formed_abcd import detect_strict_abcd_patterns
 from unformed_abcd import detect_unformed_abcd_patterns_optimized
 from unformed_xabcd import detect_strict_unformed_xabcd_patterns

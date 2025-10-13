@@ -8,7 +8,8 @@ including proper timestamp conversion for strict pattern validation.
 import pandas as pd
 from typing import List, Tuple, Dict, Any
 from formed_abcd import detect_strict_abcd_patterns
-from formed_xabcd import detect_xabcd_patterns as detect_strict_xabcd_patterns
+# Updated to use smart adaptive XABCD detection (O(n³) for large datasets, original for small)
+from xabcd_detection import detect_xabcd_patterns_smart as detect_strict_xabcd_patterns
 
 
 def convert_extremums_to_timestamps(extremums: List[Tuple], df: pd.DataFrame) -> List[Tuple]:
